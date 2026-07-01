@@ -213,6 +213,27 @@ function createConversationCard(conv) {
 
   header.appendChild(meta);
   header.appendChild(actions);
+  card.appendChild(header);
+
+  /* ── ATTACHED KNOWLEDGE ── */
+  if (conv.attached_knowledge && conv.attached_knowledge.length > 0) {
+    const attachContainer = document.createElement("div");
+    attachContainer.className = "attached-knowledge-container";
+    conv.attached_knowledge.forEach(doc => {
+      const capsule = document.createElement("div");
+      capsule.className = "attachment-capsule";
+      capsule.title = "Local Document Context";
+      capsule.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+        </svg>
+        <span class="attachment-name">${escapeHTML(doc.name)}</span>
+      `;
+      attachContainer.appendChild(capsule);
+    });
+    card.appendChild(attachContainer);
+  }
 
   /* ── TOGGLE ── */
   const msgCount = conv.messages?.length || 0;
@@ -226,11 +247,12 @@ function createConversationCard(conv) {
 
   (conv.messages || []).forEach((msg) => {
     const bubble = document.createElement("div");
-    bubble.className = `msg-bubble ${msg.type}`;
-    bubble.innerHTML = `
-      <div class="msg-label">${msg.type === "user" ? "You" : aiMeta.label}</div>
-      <div>${escapeHTML(msg.content)}</div>
-    `;
+    bubble.className = \`msg-bubble \${msg.type}\`;
+    const label = msg.type === "user" ? "You" : aiMeta.label;
+    bubble.innerHTML = \`
+      <div class="msg-label">\${label}</div>
+      <div>\${escapeHTML(msg.content)}</div>
+    \`;
     panel.appendChild(bubble);
   });
 
@@ -239,7 +261,6 @@ function createConversationCard(conv) {
     toggle.classList.toggle("open");
   });
 
-  card.appendChild(header);
   card.appendChild(toggle);
   card.appendChild(panel);
 

@@ -3,6 +3,71 @@
 // Storage: chrome.storage.LOCAL (session is unreliable in content scripts)
 
 const PENDING_INJECT_KEY = "pending_context_inject";
+const CC_STORAGE_KEY = "claude_conversations";
+
+let _attachedKnowledge = [];
+
+async function restoreAttachedKnowledge() {
+  try {
+    const res = await chrome.storage.local.get([CC_STORAGE_KEY]);
+    const all = res[CC_STORAGE_KEY] || [];
+    const convId = `deepseek_${window.location.href}`;
+    const current = all.find(c => c.id === convId);
+    if (current?.attached_knowledge) {
+      _attachedKnowledge = current.attached_knowledge;
+      console.log(`[Context Sync] Restored ${_attachedKnowledge.length} attached knowledge document(s) on DeepSeek.`);
+    }
+  } catch (err) {
+    console.error("[Context Sync] Failed to restore documents:", err);
+  }
+}
+
+async function handleInterceptedPDF(file) {
+  try {
+    showBanner(`Extracting text from ${file.name}…`);
+    if (typeof extractMarkdownFromPDF !== 'function') {
+      console.error("extractMarkdownFromPDF not defined");
+      return;
+    }
+    const markdown = await extractMarkdownFromPDF(file);
+    
+    const docObj = {
+      name: file.name,
+      content: markdown,
+      timestamp: new Date().toISOString()
+    };
+    
+    _attachedKnowledge = _attachedKnowledge.filter(doc => doc.name !== file.name);
+    _attachedKnowledge.push(docObj);
+    await scrapeAndSave();
+    showBanner(`✓ PDF extracted & saved`);
+  } catch (err) {
+    console.error("PDF extraction failed:", err);
+    showBanner(`⚠️ PDF extraction failed`, true);
+  }
+}
+
+function setupFileInterception() {
+  document.addEventListener('change', async (e) => {
+    if (e.target.type === 'file' && e.target.files?.length > 0) {
+      for (const file of e.target.files) {
+        if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+          await handleInterceptedPDF(file);
+        }
+      }
+    }
+  }, { capture: true });
+
+  document.addEventListener('drop', async (e) => {
+    if (e.dataTransfer?.files?.length > 0) {
+      for (const file of e.dataTransfer.files) {
+        if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+          await handleInterceptedPDF(file);
+        }
+      }
+    }
+  }, { capture: true });
+}
 
 // ── Wait for DeepSeek's textarea to mount
 async function waitForDeepSeekInput(maxRetries = 60) {
@@ -91,9 +156,8 @@ async function tryInjectContext() {
 }
 
 
-// BLOCK B — DeepSeek conversation scraper
 function scrapeCurrentConversation() {
-  const messages = [];
+  let messages = [];
   const now = new Date().toISOString();
 
   const allMessages = document.querySelectorAll(
@@ -146,11 +210,12 @@ function showBanner(msg, isError = false) {
 
 function downloadCurrentChat() {
   const messages = scrapeCurrentConversation();
-  if (!messages.length) { showBanner("No conversation found to download.", true); return; }
+  if (!messages.length && !_attachedKnowledge.length) { showBanner("No conversation found to download.", true); return; }
   const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "conversation";
   const data = {
     id: `scraped_${Date.now()}`,
     title, url: window.location.href, messages,
+    attached_knowledge: _attachedKnowledge,
     savedAt: new Date().toISOString(),
     source: "deepseek", version: 1,
   };
@@ -167,13 +232,22 @@ function downloadCurrentChat() {
 
 function copyCurrentChat() {
   const messages = scrapeCurrentConversation();
-  if (!messages.length) { showBanner("No conversation found to copy.", true); return; }
+  if (!messages.length && !_attachedKnowledge.length) { showBanner("No conversation found to copy.", true); return; }
   const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "conversation";
   const lines = [
     `[DeepSeek conversation: "${title}"]`,
     `[Copied: ${new Date().toLocaleString()}]`,
     "",
   ];
+  
+  if (_attachedKnowledge && _attachedKnowledge.length > 0) {
+    lines.push(`--- Attached Documents ---`);
+    for (const doc of _attachedKnowledge) {
+      lines.push(`Here is the attached document context (${doc.name}):`, ``, doc.content, ``);
+    }
+    lines.push(`--- End of Attached Documents ---`, ``);
+  }
+
   for (const msg of messages) {
     lines.push(`${msg.type === "user" ? "User" : "DeepSeek"}: ${msg.content}`, "");
   }
@@ -185,13 +259,22 @@ function copyCurrentChat() {
 
 function sendFromThisPage(target) {
   const messages = scrapeCurrentConversation();
-  if (!messages.length) { showBanner("No conversation found on this page.", true); return; }
+  if (!messages.length && !_attachedKnowledge.length) { showBanner("No conversation found on this page.", true); return; }
   const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "Untitled";
   const lines = [
     `[Context from DeepSeek conversation: "${title}"]`,
     `[Scraped: ${new Date().toLocaleString()}]`,
     "",
   ];
+  
+  if (_attachedKnowledge && _attachedKnowledge.length > 0) {
+    lines.push(`--- Attached Documents ---`);
+    for (const doc of _attachedKnowledge) {
+      lines.push(`Here is the attached document context (${doc.name}):`, ``, doc.content, ``);
+    }
+    lines.push(`--- End of Attached Documents ---`, ``);
+  }
+
   for (const msg of messages) {
     lines.push(`${msg.type === "user" ? "User" : "DeepSeek"}: ${msg.content}`, "");
   }
@@ -552,11 +635,10 @@ function retryInjectButton() {
 }
 
 // BLOCK E — Auto-save for popup display
-const CC_STORAGE_KEY = "claude_conversations";
 
 function scrapeAndSave() {
   const messages = scrapeCurrentConversation();
-  if (!messages.length) return Promise.resolve({ ok: false, reason: "no messages" });
+  if (!messages.length && !_attachedKnowledge.length) return Promise.resolve({ ok: false, reason: "no messages" });
   const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "DeepSeek conversation";
   const convId = `deepseek_${window.location.href}`;
   return new Promise((resolve) => {
@@ -565,7 +647,8 @@ function scrapeAndSave() {
       const idx = all.findIndex(c => c.id === convId);
       const entry = {
         id: convId, title, url: window.location.href,
-        messages, savedAt: new Date().toISOString(),
+        messages, attached_knowledge: _attachedKnowledge,
+        savedAt: new Date().toISOString(),
         source: "deepseek", version: 1,
       };
       if (idx >= 0) all[idx] = entry; else all.unshift(entry);
@@ -582,7 +665,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 // BLOCK F — Entry point
-function init() {
+async function init() {
+  setupFileInterception();
+  await restoreAttachedKnowledge();
   tryInjectContext();
   retryInjectButton();
 }
