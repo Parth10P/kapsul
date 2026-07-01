@@ -786,7 +786,7 @@ const _navObserver = new MutationObserver(() => {
     document.getElementById(CC_BTN_ID)?.remove();
     document.getElementById(CC_PANEL_ID)?.remove();
     _panel = null; _panelOpen = false;
-    _interceptedDocuments = [];
+_attachedKnowledge = [];
     init();
   }
 });
