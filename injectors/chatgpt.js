@@ -43,7 +43,7 @@ async function handleInterceptedPDF(file) {
     showBanner(`✓ PDF extracted & saved`);
   } catch (err) {
     console.error("PDF extraction failed:", err);
-    showBanner(`⚠️ PDF extraction failed`, true);
+    showBanner(`⚠️ ${err?.message || "PDF extraction failed"}`, true);
   }
 }
 
