@@ -1,5 +1,6 @@
 // content.js — DOM Scraper + Send-to-AI button for Claude.ai
 
+(function () {
 // ── Code-block helpers ────────────────────────────────────────────────────────
 function extractCodeBlocks(text) {
   const blocks = [];
@@ -680,24 +681,167 @@ function init() {
   retryInject();
 }
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init);
-} else {
-  init();
-}
-
-// SPA nav
-let _lastHref = window.location.href;
-const _navObserver = new MutationObserver(() => {
-  if (window.location.href !== _lastHref) {
-    _lastHref = window.location.href;
-    if (_observer) { _observer.disconnect(); _observer = null; }
-    document.getElementById(CC_BTN_ID)?.remove();
-    document.getElementById(CC_PANEL_ID)?.remove();
-    _panel = null; _panelOpen = false;
+if (window.location.hostname.includes("claude.ai")) {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
     init();
   }
-});
-_navObserver.observe(document.documentElement, { childList: true, subtree: false });
+
+  // SPA nav
+  let _lastHref = window.location.href;
+  const _navObserver = new MutationObserver(() => {
+    if (window.location.href !== _lastHref) {
+      _lastHref = window.location.href;
+      if (_observer) { _observer.disconnect(); _observer = null; }
+      document.getElementById(CC_BTN_ID)?.remove();
+      document.getElementById(CC_PANEL_ID)?.remove();
+      _panel = null; _panelOpen = false;
+      init();
+    }
+  });
+  _navObserver.observe(document.documentElement, { childList: true, subtree: false });
+}
 
 window.__contextClaw = { scrapeNow: scheduleConversationSave, scrapeMessages };
+
+// ── PDF Interceptor (Local Intercept & Archive) ───────────────────────────────
+(function initPdfInterceptor() {
+  console.log("[Context Hub] Initializing PDF Interceptor...");
+
+  // Keep track of the last URL to detect changes in SPAs
+  let lastUrl = window.location.href;
+
+  // Poll for URL changes every 500ms
+  setInterval(() => {
+    if (window.location.href !== lastUrl) {
+      const oldUrl = lastUrl;
+      lastUrl = window.location.href;
+      handleUrlChange(oldUrl, lastUrl);
+    }
+  }, 500);
+
+  function isBaseUrl(url) {
+    try {
+      const parsed = new URL(url);
+      const path = parsed.pathname;
+      return path === "/" || path === "" || path === "/app" || path === "/app/" || path === "/new" || path === "/new/";
+    } catch {
+      return false;
+    }
+  }
+
+  async function handleUrlChange(oldUrl, newUrl) {
+    console.log(`[Context Hub] URL changed from ${oldUrl} to ${newUrl}`);
+    if (isBaseUrl(oldUrl) && !isBaseUrl(newUrl)) {
+      console.log("[Context Hub] Migrating documents from base URL to new conversation URL...");
+      try {
+        const baseData = await chrome.storage.local.get(oldUrl);
+        if (baseData[oldUrl] && baseData[oldUrl].documents && baseData[oldUrl].documents.length > 0) {
+          const newConvoData = await chrome.storage.local.get(newUrl);
+          const newDocs = newConvoData[newUrl] || { documents: [] };
+          if (!Array.isArray(newDocs.documents)) {
+            newDocs.documents = [];
+          }
+          
+          // Merge documents
+          newDocs.documents = [...newDocs.documents, ...baseData[oldUrl].documents];
+          
+          await chrome.storage.local.set({ [newUrl]: newDocs });
+          await chrome.storage.local.remove(oldUrl);
+          console.log(`[Context Hub] Successfully migrated ${baseData[oldUrl].documents.length} documents to key: ${newUrl}`);
+        }
+      } catch (error) {
+        console.error("[Context Hub] Failed to migrate documents on URL change:", error);
+      }
+    }
+  }
+
+  /**
+   * Filter and process dropped or selected files
+   * @param {FileList|Array} files - The extracted files
+   */
+  async function processFiles(files) {
+    if (!files || files.length === 0) return;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+        console.log(`[Context Hub] Intercepted PDF upload: ${file.name}`);
+        await handlePdfUpload(file);
+      }
+    }
+  }
+
+  /**
+   * Read the raw PDF file as Base64 Data URL and cache it
+   * @param {File} file - The PDF file
+   */
+  async function handlePdfUpload(file) {
+    console.log(`[Context Hub] Reading PDF: ${file.name}...`);
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = async (e) => {
+        try {
+          const base64Data = e.target.result;
+          console.log(`[Context Hub] Successfully read ${file.name}.`);
+          await cachePdfResult(file.name, base64Data);
+          resolve();
+        } catch (error) {
+          console.error(`[Context Hub] Error caching PDF ${file.name}:`, error);
+          reject(error);
+        }
+      };
+
+      reader.onerror = (error) => {
+        console.error(`[Context Hub] Error reading PDF ${file.name}:`, error);
+        reject(error);
+      };
+
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /**
+   * Cache the raw Base64 data in chrome.storage.local
+   * @param {string} filename - Name of the file
+   * @param {string} rawData - Base64 Data URL content
+   */
+  async function cachePdfResult(filename, rawData) {
+    const urlKey = window.location.href;
+    try {
+      const storageResult = await chrome.storage.local.get(urlKey);
+      const urlData = storageResult[urlKey] || {};
+      
+      if (!Array.isArray(urlData.documents)) {
+        urlData.documents = [];
+      }
+      
+      urlData.documents.push({
+        filename: filename,
+        content: rawData,
+        timestamp: Date.now()
+      });
+
+      await chrome.storage.local.set({ [urlKey]: urlData });
+      console.log(`[Context Hub] Cached PDF "${filename}" under key: ${urlKey}`);
+    } catch (error) {
+      console.error(`[Context Hub] Failed to cache PDF for ${filename}:`, error);
+    }
+  }
+
+  // Event Listeners (Capture Phase)
+  document.addEventListener("drop", (e) => {
+    if (e.dataTransfer && e.dataTransfer.files) {
+      processFiles(e.dataTransfer.files);
+    }
+  }, true);
+
+  document.addEventListener("change", (e) => {
+    if (e.target && e.target.type === "file" && e.target.files) {
+      processFiles(e.target.files);
+    }
+  }, true);
+})();
+})();

@@ -600,7 +600,11 @@ function injectGeminiButton() {
   if (!slot) return;
   const btn = createAskAIButton();
   const toolbox = slot.querySelector("toolbox-drawer");
-  toolbox ? slot.insertBefore(btn, toolbox) : slot.appendChild(btn);
+  if (toolbox && toolbox.parentNode) {
+    toolbox.parentNode.insertBefore(btn, toolbox);
+  } else {
+    slot.appendChild(btn);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

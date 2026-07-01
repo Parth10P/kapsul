@@ -31,7 +31,7 @@ function init() {
 }
 
 function bindUI() {
-  document.getElementById("export-btn").addEventListener("click", exportAllHandler);
+  document.getElementById("export-btn").addEventListener("click", exportZipHandler);
 
   document.getElementById("clear-all-btn").addEventListener("click", () => {
     chrome.storage.local.set({ [STORAGE_KEY]: [] }, () => {
@@ -291,12 +291,101 @@ function exportConversation(conv) {
   URL.revokeObjectURL(url);
 }
 
-function exportAllHandler() {
-  chrome.storage.local.get([STORAGE_KEY], (res) => {
-    const conversations = res[STORAGE_KEY] || [];
-    if (!conversations.length) { showToast("Nothing to export"); return; }
-    exportConversation({ title: "all_conversations", data: conversations });
+async function scrapeGeminiChatHistory() {
+  console.log("[Context Hub] Fetching chat history JSON...");
+  return new Promise((resolve) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const activeTab = tabs[0];
+      if (!activeTab) {
+        resolve({ error: "No active tab" });
+        return;
+      }
+      
+      // Request active tab scrape first to ensure latest content is in local storage
+      chrome.runtime.sendMessage({ action: "scrapeActiveTab" }, () => {
+        chrome.storage.local.get([STORAGE_KEY], (res) => {
+          const all = res[STORAGE_KEY] || [];
+          const currentConvo = all.find(c => c.url === activeTab.url) || null;
+          if (currentConvo) {
+            resolve(currentConvo);
+          } else {
+            resolve(all[all.length - 1] || { error: "No conversations in storage" });
+          }
+        });
+      });
+    });
   });
+}
+
+async function exportZipHandler() {
+  console.log("[Context Hub] Initiating ZIP export...");
+  showToast("Preparing ZIP archive...");
+
+  try {
+    // 1. Get current tab's URL
+    const tabs = await new Promise((resolve) => chrome.tabs.query({ active: true, currentWindow: true }, resolve));
+    const activeUrl = tabs[0]?.url || "";
+    if (!activeUrl) {
+      throw new Error("No active tab URL found.");
+    }
+
+    // 2. Fetch the cached Base64 documents from chrome.storage.local for this URL
+    const storageResult = await chrome.storage.local.get(activeUrl);
+    const urlData = storageResult[activeUrl] || {};
+    const documents = urlData.documents || [];
+    console.log(`[Context Hub] Found ${documents.length} cached documents for this session.`);
+
+    // 3. Fetch the chat history JSON
+    const chatHistory = await scrapeGeminiChatHistory();
+
+    // 4. Instantiate JSZip
+    const zip = new JSZip();
+
+    // 5. Save chat history as conversation_state.json
+    zip.file("conversation_state.json", JSON.stringify(chatHistory, null, 2));
+
+    // 6. Create attachments/ folder and add PDF files
+    if (documents.length > 0) {
+      const attachmentsFolder = zip.folder("attachments");
+      documents.forEach((doc) => {
+        let base64Content = doc.content || "";
+        // Strip data URI prefix if present
+        if (base64Content.startsWith("data:")) {
+          const commaIndex = base64Content.indexOf(",");
+          if (commaIndex !== -1) {
+            base64Content = base64Content.substring(commaIndex + 1);
+          }
+        }
+        
+        console.log(`[Context Hub] Adding file to ZIP: ${doc.filename}`);
+        attachmentsFolder.file(doc.filename, base64Content, { base64: true });
+      });
+    }
+
+    // 7. Generate zip blob
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    const blobUrl = URL.createObjectURL(zipBlob);
+
+    // 8. Download the ZIP file
+    chrome.downloads.download({
+      url: blobUrl,
+      filename: "ContextHub_Export.zip",
+      saveAs: true
+    }, (downloadId) => {
+      if (chrome.runtime.lastError) {
+        console.error("[Context Hub] Download error:", chrome.runtime.lastError.message);
+        showToast("Download failed.");
+      } else {
+        console.log(`[Context Hub] Download started with ID: ${downloadId}`);
+        showToast("ZIP Exported successfully!");
+      }
+      URL.revokeObjectURL(blobUrl);
+    });
+
+  } catch (err) {
+    console.error("[Context Hub] Export failed:", err);
+    showToast("Export failed: " + err.message);
+  }
 }
 
 /* =========================

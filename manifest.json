@@ -6,6 +6,8 @@
 
   "permissions": [
     "storage",
+    "unlimitedStorage",
+    "downloads",
     "activeTab",
     "scripting",
     "tabs"
@@ -31,12 +33,12 @@
     },
     {
       "matches": ["https://gemini.google.com/*"],
-      "js": ["injectors/gemini.js"],
+      "js": ["injectors/gemini.js", "content.js"],
       "run_at": "document_idle"
     },
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["injectors/chatgpt.js"],
+      "js": ["injectors/chatgpt.js", "content.js"],
       "run_at": "document_idle"
     },
     {
