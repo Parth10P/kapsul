@@ -3,14 +3,12 @@
   "name": "Context Sync",
   "version": "1.2.0",
   "description": "Automatically save and restore Claude.ai conversation context. Send context to Gemini, ChatGPT, or DeepSeek.",
-
   "permissions": [
     "storage",
     "activeTab",
     "scripting",
     "tabs"
   ],
-
   "host_permissions": [
     "https://claude.ai/*",
     "https://generativelanguage.googleapis.com/*",
@@ -18,41 +16,65 @@
     "https://chatgpt.com/*",
     "https://chat.deepseek.com/*"
   ],
-
   "background": {
     "service_worker": "background.js"
   },
-
   "web_accessible_resources": [
     {
-      "resources": ["lib/pdf.worker.min.js"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "lib/pdf.worker.min.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
-
   "content_scripts": [
     {
-      "matches": ["*://*.claude.ai/*"],
-      "js": ["lib/pdf.min.js", "lib/pdf-parser.js", "content.js"],
+      "matches": [
+        "*://*.claude.ai/*"
+      ],
+      "js": [
+        "lib/pdf.min.js",
+        "lib/pdf-parser.js",
+        "content.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://gemini.google.com/*"],
-      "js": ["injectors/gemini.js"],
+      "matches": [
+        "https://gemini.google.com/*"
+      ],
+      "js": [
+        "lib/pdf.min.js",
+        "lib/pdf-parser.js",
+        "injectors/gemini.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://chatgpt.com/*"],
-      "js": ["injectors/chatgpt.js"],
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "lib/pdf.min.js",
+        "lib/pdf-parser.js",
+        "injectors/chatgpt.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://chat.deepseek.com/*"],
-      "js": ["injectors/deepseek.js"],
+      "matches": [
+        "https://chat.deepseek.com/*"
+      ],
+      "js": [
+        "lib/pdf.min.js",
+        "lib/pdf-parser.js",
+        "injectors/deepseek.js"
+      ],
       "run_at": "document_idle"
     }
   ],
-
   "action": {
     "default_popup": "popup/popup.html",
     "default_title": "Context Sync",
@@ -62,7 +84,6 @@
       "32": "icons/icon48.png"
     }
   },
-
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

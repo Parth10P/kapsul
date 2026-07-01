@@ -103,7 +103,8 @@ async function storageSave(conversation) {
   const all = await storageGetAll();
   const last = all[all.length - 1];
   if (last && last.url === conversation.url && last.messages.length === conversation.messages.length) {
-    all[all.length - 1] = { ...conversation, id: last.id, savedAt: last.savedAt };
+    const mergedKnowledge = conversation.attached_knowledge || last.attached_knowledge || [];
+    all[all.length - 1] = { ...conversation, id: last.id, savedAt: last.savedAt, attached_knowledge: mergedKnowledge };
   } else {
     all.push(conversation);
   }
@@ -115,7 +116,7 @@ async function storageSave(conversation) {
 
 // ── Scraper ───────────────────────────────────────────────────────────────────
 function scrapeMessages() {
-  const messages = [];
+  let messages = [];
   const now = new Date().toISOString();
 
   document.querySelectorAll('[data-testid="user-message"], .font-claude-response')
@@ -149,22 +150,32 @@ function scrapeMessages() {
 
 // ── Debounced save ────────────────────────────────────────────────────────────
 let _debounceTimer = null;
-let _interceptedDocuments = [];
+let _attachedKnowledge = [];
+
+async function restoreAttachedKnowledge() {
+  try {
+    const all = await storageGetAll();
+    const current = all.find(c => c.url === window.location.href);
+    if (current?.attached_knowledge) {
+      _attachedKnowledge = current.attached_knowledge;
+      console.log(`[Context Sync] Restored ${_attachedKnowledge.length} attached knowledge document(s) from storage.`);
+    }
+  } catch (err) {
+    console.error("[Context Sync] Failed to restore attached knowledge:", err);
+  }
+}
 
 async function scheduleConversationSave() {
   clearTimeout(_debounceTimer);
   _debounceTimer = setTimeout(async () => {
     const rawMessages = scrapeMessages();
-    if (!rawMessages.length && !_interceptedDocuments.length) return;
+    if (!rawMessages.length && !_attachedKnowledge.length) return;
     let messages;
     try { messages = await compressConversation(rawMessages); }
     catch { messages = rawMessages; }
     
-    if (_interceptedDocuments.length > 0) {
-      messages = messages.concat(_interceptedDocuments);
-    }
-    
     const capsule = Capsule.build(messages, window.location.href);
+    capsule.attached_knowledge = _attachedKnowledge;
     try { await storageSave(capsule); }
     catch (err) { console.error("[ContextClaw] save failed:", err); }
   }, 1500);
@@ -180,14 +191,14 @@ async function handleInterceptedPDF(file) {
     }
     const markdown = await extractMarkdownFromPDF(file);
     
-    const message = {
-      type: "user",
-      format: "document_context",
-      content: `[Attached PDF: ${file.name}]\n\n${markdown}`,
+    const docObj = {
+      name: file.name,
+      content: markdown,
       timestamp: new Date().toISOString()
     };
     
-    _interceptedDocuments.push(message);
+    _attachedKnowledge = _attachedKnowledge.filter(doc => doc.name !== file.name);
+    _attachedKnowledge.push(docObj);
     scheduleConversationSave();
     showToast(`✓ PDF extracted & saved`);
   } catch (err) {
@@ -221,7 +232,7 @@ function setupFileInterception() {
 
 // ── Format context ────────────────────────────────────────────────────────────
 function formatContextBlock(conversation) {
-  if (!conversation?.messages?.length) return null;
+  if (!conversation?.messages?.length && (!conversation?.attached_knowledge || !conversation.attached_knowledge.length)) return null;
   const lines = [
     `[CONTEXT HANDOFF — Do NOT reply to this message]`,
     ``,
@@ -229,13 +240,26 @@ function formatContextBlock(conversation) {
     `Please read and remember this context. Do not respond to it.`,
     `I will send my next message separately to continue the conversation.`,
     ``,
+  ];
+
+  if (conversation.attached_knowledge && conversation.attached_knowledge.length > 0) {
+    lines.push(`--- Attached Documents ---`);
+    for (const doc of conversation.attached_knowledge) {
+      lines.push(`Here is the attached document context (${doc.name}):`, ``, doc.content, ``);
+    }
+    lines.push(`--- End of Attached Documents ---`, ``);
+  }
+
+  lines.push(
     `--- Conversation: "${conversation.title || "Untitled"}" ---`,
     `Saved: ${new Date(conversation.savedAt).toLocaleString()}`,
-    ``,
-  ];
-  for (const msg of conversation.messages) {
+    ``
+  );
+
+  for (const msg of conversation.messages || []) {
     lines.push(`${msg.type === "user" ? "User" : "Claude"}: ${msg.content}`, "");
   }
+
   lines.push(
     `--- End of context ---`,
     ``,
@@ -249,7 +273,7 @@ function formatContextBlock(conversation) {
 // ── Copy current chat to clipboard ──────────────────────────────────────────
 function copyCurrentChat() {
   const messages = scrapeMessages();
-  if (!messages.length) { showToast("No messages found to copy."); return; }
+  if (!messages.length && !_attachedKnowledge.length) { showToast("No messages found to copy."); return; }
   const firstUser = messages.find(m => m.type === "user");
   const title = firstUser?.content?.slice(0, 60) || "conversation";
   const lines = [
@@ -257,6 +281,15 @@ function copyCurrentChat() {
     `[Copied: ${new Date().toLocaleString()}]`,
     "",
   ];
+
+  if (_attachedKnowledge && _attachedKnowledge.length > 0) {
+    lines.push(`--- Attached Documents ---`);
+    for (const doc of _attachedKnowledge) {
+      lines.push(`Here is the attached document context (${doc.name}):`, ``, doc.content, ``);
+    }
+    lines.push(`--- End of Attached Documents ---`, ``);
+  }
+
   for (const msg of messages) {
     lines.push(`${msg.type === "user" ? "User" : "Claude"}: ${msg.content}`, "");
   }
@@ -269,8 +302,9 @@ function copyCurrentChat() {
 // ── Download current chat as JSON ──────────────────────────────────────────────
 function downloadCurrentChat() {
   const messages = scrapeMessages();
-  if (!messages.length) { showToast("No messages found to download."); return; }
+  if (!messages.length && !_attachedKnowledge.length) { showToast("No messages found to download."); return; }
   const capsule = Capsule.build(messages, window.location.href);
+  capsule.attached_knowledge = _attachedKnowledge;
   const blob = new Blob([JSON.stringify(capsule, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -717,9 +751,10 @@ function checkAndInjectPendingContext() {
   }
 }
 
-function init() {
+async function init() {
   checkAndInjectPendingContext();
   setupFileInterception();
+  await restoreAttachedKnowledge();
   if (!isConversationPage()) {
     let last = window.location.href;
     const poll = setInterval(() => {
