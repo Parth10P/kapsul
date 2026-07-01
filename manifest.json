@@ -23,10 +23,17 @@
     "service_worker": "background.js"
   },
 
+  "web_accessible_resources": [
+    {
+      "resources": ["lib/pdf.worker.min.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
   "content_scripts": [
     {
       "matches": ["*://*.claude.ai/*"],
-      "js": ["content.js"],
+      "js": ["lib/pdf.min.js", "lib/pdf-parser.js", "content.js"],
       "run_at": "document_idle"
     },
     {

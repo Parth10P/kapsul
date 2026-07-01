@@ -149,20 +149,75 @@ function scrapeMessages() {
 
 // ── Debounced save ────────────────────────────────────────────────────────────
 let _debounceTimer = null;
+let _interceptedDocuments = [];
 
 async function scheduleConversationSave() {
   clearTimeout(_debounceTimer);
   _debounceTimer = setTimeout(async () => {
     const rawMessages = scrapeMessages();
-    if (!rawMessages.length) return;
+    if (!rawMessages.length && !_interceptedDocuments.length) return;
     let messages;
     try { messages = await compressConversation(rawMessages); }
     catch { messages = rawMessages; }
+    
+    if (_interceptedDocuments.length > 0) {
+      messages = messages.concat(_interceptedDocuments);
+    }
+    
     const capsule = Capsule.build(messages, window.location.href);
     try { await storageSave(capsule); }
     catch (err) { console.error("[ContextClaw] save failed:", err); }
   }, 1500);
 }
+
+// ── File Interception ─────────────────────────────────────────────────────────
+async function handleInterceptedPDF(file) {
+  try {
+    showToast(`Extracting text from ${file.name}…`);
+    if (typeof extractMarkdownFromPDF !== 'function') {
+      console.error("extractMarkdownFromPDF not defined");
+      return;
+    }
+    const markdown = await extractMarkdownFromPDF(file);
+    
+    const message = {
+      type: "user",
+      format: "document_context",
+      content: `[Attached PDF: ${file.name}]\n\n${markdown}`,
+      timestamp: new Date().toISOString()
+    };
+    
+    _interceptedDocuments.push(message);
+    scheduleConversationSave();
+    showToast(`✓ PDF extracted & saved`);
+  } catch (err) {
+    console.error("PDF extraction failed:", err);
+    showToast(`⚠️ PDF extraction failed`);
+  }
+}
+
+function setupFileInterception() {
+  document.addEventListener('change', async (e) => {
+    if (e.target.type === 'file' && e.target.files?.length > 0) {
+      for (const file of e.target.files) {
+        if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+          await handleInterceptedPDF(file);
+        }
+      }
+    }
+  }, { capture: true });
+
+  document.addEventListener('drop', async (e) => {
+    if (e.dataTransfer?.files?.length > 0) {
+      for (const file of e.dataTransfer.files) {
+        if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+          await handleInterceptedPDF(file);
+        }
+      }
+    }
+  }, { capture: true });
+}
+
 
 // ── Format context ────────────────────────────────────────────────────────────
 function formatContextBlock(conversation) {
@@ -664,6 +719,7 @@ function checkAndInjectPendingContext() {
 
 function init() {
   checkAndInjectPendingContext();
+  setupFileInterception();
   if (!isConversationPage()) {
     let last = window.location.href;
     const poll = setInterval(() => {
@@ -695,6 +751,7 @@ const _navObserver = new MutationObserver(() => {
     document.getElementById(CC_BTN_ID)?.remove();
     document.getElementById(CC_PANEL_ID)?.remove();
     _panel = null; _panelOpen = false;
+    _interceptedDocuments = [];
     init();
   }
 });
