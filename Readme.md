@@ -588,4 +588,4 @@ Built with 🦞 and frustration by developers who kept hitting AI context limits
 **Stop losing context. Start syncing it.**
 
 </div>
-check 
+checking
