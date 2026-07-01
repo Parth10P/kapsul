@@ -247,12 +247,12 @@ function createConversationCard(conv) {
 
   (conv.messages || []).forEach((msg) => {
     const bubble = document.createElement("div");
-    bubble.className = \`msg-bubble \${msg.type}\`;
+    bubble.className = `msg-bubble ${msg.type}`;
     const label = msg.type === "user" ? "You" : aiMeta.label;
-    bubble.innerHTML = \`
-      <div class="msg-label">\${label}</div>
-      <div>\${escapeHTML(msg.content)}</div>
-    \`;
+    bubble.innerHTML = `
+      <div class="msg-label">${label}</div>
+      <div>${escapeHTML(msg.content)}</div>
+    `;
     panel.appendChild(bubble);
   });
 
