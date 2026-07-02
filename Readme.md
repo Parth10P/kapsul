@@ -72,9 +72,12 @@ This is the problem **Kapsul** was built to solve.
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                                                                              │
-│  Claude / ChatGPT / Gemini / DeepSeek  ──▶  🦞 Kapsul  ──▶  Capsule  │
+│  Claude / ChatGPT / Gemini / DeepSeek  ──▶  🦞 Kapsul Extension          │
 │                                                                              │
-│  Capsule  ──▶  One click  ──▶  Any AI (auto-injected & auto-submitted)      │
+│  Extension ──▶ One click ──▶ Any Web AI (auto-injected & auto-submitted)     │
+│       │                                                                      │
+│       ▼                                                                      │
+│  Local Node.js Server ──▶ Model Context Protocol (MCP) ──▶ Desktop AI Agents │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -93,6 +96,14 @@ No cloud servers. No sign-up. Everything runs locally in your browser.
 ---
 
 ## ✨ Features
+
+### 🔌 Desktop MCP Integration
+| Feature | Status |
+|---|---|
+| Local Express Server bridge (`mcp/index.js`) | ✅ Live |
+| Model Context Protocol (MCP) SDK Server | ✅ Live |
+| Sync chats directly to `~/.kapsul-data` | ✅ Live |
+| `get_recent_ai_chats` tool for Desktop AI Agents | ✅ Live |
 
 ### 🖥️ Unified Popup
 | Feature | Status |
@@ -226,6 +237,18 @@ Click **"Load unpacked"** and select the folder containing `manifest.json`.
 ### Step 5 — Verify installation
 
 You should see the 🦞 lobster icon appear in your Chrome toolbar. If it's hidden, click the puzzle piece icon and pin it.
+
+### Step 6 — Start the Local MCP Server (Optional)
+
+To sync conversations directly to your local file system and access them from Desktop AI agents (via the Model Context Protocol):
+
+```bash
+cd mcp
+npm install
+npm start
+```
+The server will start on `localhost:3000` and save your conversations to `~/.kapsul-data`. You can configure your local Desktop AI to connect to the MCP server.
+
 
 ---
 
@@ -498,6 +521,10 @@ kapsul/
 │   ├── chatgpt.js              ← ChatGPT scraper + Export panel + Copy/Download
 │   ├── gemini.js               ← Gemini scraper + Export panel + Copy/Download
 │   └── deepseek.js             ← DeepSeek scraper + Export panel + Copy/Download
+├── mcp/                      ← Local Node.js Server & MCP integration
+│   ├── index.js              ← Express API + MCP SDK Server
+│   ├── package.json          ← Node dependencies
+│   └── mcp_config.json       ← MCP configuration template
 ├── popup/
 │   ├── popup.html              ← Popup markup
 │   ├── popup.js                ← Unified list, source badges, search, export, delete
