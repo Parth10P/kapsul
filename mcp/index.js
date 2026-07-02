@@ -10,6 +10,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 
 // --- 1. Storage Setup ---
 // Define the directory where chat capsules will be saved
+
 const DATA_DIR = path.join(os.homedir(), '.kapsul-data');
 
 // Create the data directory on startup if it doesn't already exist
