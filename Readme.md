@@ -1,4 +1,4 @@
-# 🦞 Context Sync
+# 🦞 Kapsul
 
 
 ![Chrome Extension](https://img.shields.io/badge/Platform-Chrome%20Extension-blue)
@@ -63,7 +63,7 @@ Then — **BAM.** You hit your usage limit. Or your account gets switched. Or yo
 
 **Everything is gone.** The context, the decisions, the nuance. You have to start from scratch and re-explain everything to a fresh AI that has no idea what you've been building.
 
-This is the problem **Context Sync** was built to solve.
+This is the problem **Kapsul** was built to solve.
 
 ---
 
@@ -72,14 +72,14 @@ This is the problem **Context Sync** was built to solve.
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                                                                              │
-│  Claude / ChatGPT / Gemini / DeepSeek  ──▶  🦞 Context Sync  ──▶  Capsule  │
+│  Claude / ChatGPT / Gemini / DeepSeek  ──▶  🦞 Kapsul  ──▶  Capsule  │
 │                                                                              │
 │  Capsule  ──▶  One click  ──▶  Any AI (auto-injected & auto-submitted)      │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Context Sync** is a Chrome extension that:
+**Kapsul** is a Chrome extension that:
 
 1. **Silently watches** your conversations on Claude, ChatGPT, Gemini, and DeepSeek using DOM observers
 2. **Automatically saves** every message as you chat — no manual action needed
@@ -140,7 +140,7 @@ No cloud servers. No sign-up. Everything runs locally in your browser.
 
 ### Extension Popup — Unified conversation list with source badges
 
-![Context Sync Popup](assets/Preview.png)
+![Kapsul Popup](assets/Preview.png)
 
 > The popup shows saved conversations from all four AI platforms in one place. Each card displays the conversation title, date, source AI badge (CLAUDE · CHATGPT · GEMINI · DEEPSEEK), a message count toggle, and per-card download/delete buttons.
 
@@ -207,8 +207,8 @@ Since this extension is not yet on the Chrome Web Store, install it in **Develop
 ### Step 1 — Download the extension files
 
 ```bash
-git clone https://github.com/Vineetpandey0/context-sync.git
-cd context-sync
+git clone https://github.com/Vineetpandey0/kapsul.git
+cd kapsul
 ```
 
 ### Step 2 — Open Chrome Extensions
@@ -291,7 +291,7 @@ const GEMINI_API_KEY = "AIzaSy...yourkey...";
 
 ### Step 3 — Reload the extension
 
-Go to `chrome://extensions` → find Context Sync → click the **refresh** (↺) icon.
+Go to `chrome://extensions` → find Kapsul → click the **refresh** (↺) icon.
 
 ### What compression does
 
@@ -460,7 +460,7 @@ Raw Conversation
 ## 📁 File Structure
 
 ```
-Context-Sync/
+kapsul/
 ├── manifest.json               ← MV3 config, host permissions for all 4 AIs
 ├── background.js               ← Service worker: Gemini API, routing, scrapeActiveTab
 ├── content.js                  ← Claude scraper + Export button + Copy/Download

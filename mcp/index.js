@@ -10,7 +10,8 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 
 // --- 1. Storage Setup ---
 // Define the directory where chat capsules will be saved
-const DATA_DIR = path.join(os.homedir(), '.context-sync-data');
+
+const DATA_DIR = path.join(os.homedir(), '.kapsul-data');
 
 // Create the data directory on startup if it doesn't already exist
 if (!existsSync(DATA_DIR)) {
@@ -58,7 +59,7 @@ app.listen(PORT, () => {
 // Initialize the MCP SDK Server
 const server = new Server(
   {
-    name: 'context-sync-mcp',
+    name: 'kapsul-mcp',
     version: '1.0.0',
   },
   {
@@ -74,7 +75,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'get_recent_ai_chats',
-        description: 'Retrieves the most recently saved AI conversation histories from the user\'s Context Sync extension.',
+        description: 'Retrieves the most recently saved AI conversation histories from the user\'s Kapsul extension.',
         inputSchema: {
           type: 'object',
           properties: {}, // No input arguments needed for this tool

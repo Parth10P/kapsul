@@ -1,7 +1,7 @@
 {
-  "name": "context-sync-server",
+  "name": "kapsul-server",
   "version": "1.0.0",
-  "description": "Double Agent server for Context Sync",
+  "description": "Double Agent server for Kapsul",
   "type": "module",
   "main": "index.js",
   "scripts": {

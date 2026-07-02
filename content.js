@@ -158,10 +158,10 @@ async function restoreAttachedKnowledge() {
     const current = all.find(c => c.url === window.location.href);
     if (current?.attached_knowledge) {
       _attachedKnowledge = current.attached_knowledge;
-      console.log(`[Context Sync] Restored ${_attachedKnowledge.length} attached knowledge document(s) from storage.`);
+      console.log(`[Kapsul] Restored ${_attachedKnowledge.length} attached knowledge document(s) from storage.`);
     }
   } catch (err) {
-    console.error("[Context Sync] Failed to restore attached knowledge:", err);
+    console.error("[Kapsul] Failed to restore attached knowledge:", err);
   }
 }
 
