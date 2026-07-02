@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "kapsul": {
+      "command": "node",
+      "args": [
+        "/Users/patel_parthk/Desktop/context hub/Context-Sync-main/mcp/index.js"
+      ]
+    }
+  }
+}
