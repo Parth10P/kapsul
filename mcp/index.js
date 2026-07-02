@@ -41,7 +41,7 @@ app.post('/save-chat', async (req, res) => { // Notice the 'async' here
 
     // Using the async writeFile that matches Antigravity's setup
     await fs.writeFile(filePath, JSON.stringify(chatData, null, 2));
-    console.log(`[Express] Chat saved successfully: ${filename}`);
+    console.error(`[Express] Chat saved successfully: ${filename}`);
 
     res.status(200).json({ success: true, message: "Chat saved locally" });
   } catch (error) {
@@ -59,7 +59,7 @@ app.listen(PORT, () => {
 // Initialize the MCP SDK Server
 const server = new Server(
   {
-    name: 'kapsul-mcp',
+    name: 'kapsul',
     version: '1.0.0',
   },
   {

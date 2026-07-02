@@ -305,6 +305,36 @@ Go to `chrome://extensions` → find Kapsul → click the **refresh** (↺) icon
 
 ---
 
+## 🤖 MCP Setup (Auto-Spawn Server)
+
+This repository includes a local Model Context Protocol (MCP) server in the `mcp/` directory. It exposes the `get_recent_ai_chats` tool, which retrieves your most recently saved AI conversation histories from the local sync directory (`~/.context-sync-data/`) and provides them to coding agents or MCP clients.
+
+The server is designed to be **auto-spawned by the MCP client on demand**, rather than run manually as a persistent background service.
+
+### Configuring Your IDE / MCP Client
+
+To set this up for any general-purpose MCP client (like **Antigravity, Cursor, Codex, Claude Code, or Claude Desktop**), you need to register it in your IDE's MCP configuration settings.
+
+Depending on your client, this might be a UI configuration menu or a JSON file (e.g., `claude_desktop_config.json`, `mcp.json`, etc.). Add the following to your config, ensuring you use the absolute path to `mcp/index.js` on your machine:
+
+```json
+{
+  "mcpServers": {
+    "kapsul": {
+      "command": "node",
+      "args": ["/Users/patel_parthk/Desktop/context hub/Context-Sync-main/mcp/index.js"]
+    }
+  }
+}
+```
+*(An example file is provided at `mcp/mcp_config.json` for reference.)*
+
+> **Note:** After updating the configuration, you may need to fully restart your IDE or MCP client for it to detect the new server.
+
+> **Note:** Because the server is auto-spawned by your IDE/client, the local Express endpoint (`/save-chat`, used by the popup's "Sync to Local" button) will **only be reachable while your IDE currently has this process spawned**. It is NOT a persistent background service under this setup.
+
+---
+
 ## 💉 One-Click Cross-Platform Injection
 
 Every supported AI has a native **Export** button injected directly into its toolbar by the extension.
