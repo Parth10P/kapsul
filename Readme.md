@@ -151,7 +151,7 @@ No cloud servers. No sign-up. Everything runs locally in your browser.
 ![Injected Export Panel](assets/InjectedUI.png)
 
 > Clicking the **Export** button injected into the AI's toolbar opens this panel. Pick a destination AI to auto-inject the context, or use the **Copy** / **Download** buttons at the bottom to grab the conversation instantly.
-
+git 
 ---
 
 ## 🏗️ Architecture
