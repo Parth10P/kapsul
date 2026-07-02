@@ -15,10 +15,10 @@ async function restoreAttachedKnowledge() {
     const current = all.find(c => c.id === convId);
     if (current?.attached_knowledge) {
       _attachedKnowledge = current.attached_knowledge;
-      console.log(`[Context Sync] Restored ${_attachedKnowledge.length} attached knowledge document(s) on DeepSeek.`);
+      console.log(`[Kapsul] Restored ${_attachedKnowledge.length} attached knowledge document(s) on DeepSeek.`);
     }
   } catch (err) {
-    console.error("[Context Sync] Failed to restore documents:", err);
+    console.error("[Kapsul] Failed to restore documents:", err);
   }
 }
 
