@@ -415,7 +415,7 @@ function sendFromThisPage(target) {
   const AI_URLS = { claude: "https://claude.ai/new", chatgpt: "https://chatgpt.com/", deepseek: "https://chat.deepseek.com/" };
   const context = lines.join("\n");
   try {
-    chrome.storage.session.set(
+    chrome.storage.local.set(
       { [PENDING_INJECT_KEY]: { target, context, ts: Date.now() } },
       () => window.open(AI_URLS[target], "_blank")
     );

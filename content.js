@@ -718,11 +718,11 @@ function retryInject() {
 // ── Pending context injection (receive context from other AIs) ────────────────
 function checkAndInjectPendingContext() {
   try {
-    chrome.storage.session.get(["pending_context_inject"], (result) => {
+    chrome.storage.local.get(["pending_context_inject"], (result) => {
       const pending = result["pending_context_inject"];
       if (!pending) return;
       if (pending.target !== "claude" || Date.now() - pending.ts > 60000) return;
-      chrome.storage.session.remove(["pending_context_inject"]);
+      chrome.storage.local.remove(["pending_context_inject"]);
 
       const context = pending.context;
       let attempts = 0;

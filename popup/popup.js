@@ -187,6 +187,17 @@ function createConversationCard(conv) {
   const actions = document.createElement("div");
   actions.className = "card-actions";
 
+  const syncBtn = document.createElement("button");
+  syncBtn.className = "btn-icon-only";
+  syncBtn.title = "Sync to Local";
+  syncBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+    <line x1="8" y1="21" x2="16" y2="21"></line>
+    <line x1="12" y1="17" x2="12" y2="21"></line>
+  </svg>`;
+  syncBtn.onclick = (e) => { e.stopPropagation(); syncToLocalServer(conv, syncBtn); };
+
   const exportBtn = document.createElement("button");
   exportBtn.className = "btn-icon-only";
   exportBtn.title = "Download as JSON";
@@ -208,6 +219,7 @@ function createConversationCard(conv) {
   </svg>`;
   deleteBtn.onclick = (e) => { e.stopPropagation(); deleteConversation(conv.id, card); };
 
+  actions.appendChild(syncBtn);
   actions.appendChild(exportBtn);
   actions.appendChild(deleteBtn);
 
@@ -294,6 +306,48 @@ function deleteConversation(id, cardEl) {
       showToast("Conversation deleted");
     });
   });
+}
+
+/* =========================
+   SYNC TO LOCAL SERVER
+========================= */
+
+async function syncToLocalServer(chatData, btnEl) {
+  const originalHTML = btnEl.innerHTML;
+  
+  try {
+    const response = await fetch("http://localhost:3000/save-chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(chatData)
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Server returned ${response.status}`);
+    }
+    
+    // Temporarily styling the button to accommodate text instead of an icon
+    btnEl.style.width = "auto";
+    btnEl.style.padding = "0 8px";
+    btnEl.style.fontSize = "12px";
+    btnEl.innerHTML = "Synced ✅";
+  } catch (error) {
+    console.error("Sync error:", error);
+    btnEl.style.width = "auto";
+    btnEl.style.padding = "0 8px";
+    btnEl.style.fontSize = "12px";
+    btnEl.innerHTML = "Server Offline ❌";
+  }
+  
+  // Revert back to the original icon after 2 seconds
+  setTimeout(() => {
+    btnEl.innerHTML = originalHTML;
+    btnEl.style.width = "";
+    btnEl.style.padding = "";
+    btnEl.style.fontSize = "";
+  }, 2000);
 }
 
 /* =========================
