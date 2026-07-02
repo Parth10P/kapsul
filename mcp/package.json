@@ -1,0 +1,15 @@
+{
+  "name": "context-sync-server",
+  "version": "1.0.0",
+  "description": "Double Agent server for Context Sync",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  }
+}
