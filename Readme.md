@@ -336,7 +336,7 @@ Depending on your client, this might be a UI configuration menu or a JSON file (
   "mcpServers": {
     "kapsul": {
       "command": "node",
-      "args": ["/Users/patel_parthk/Desktop/context hub/Context-Sync-main/mcp/index.js"]
+      "args": ["<ABSOLUTE_PATH_TO>/mcp/index.js"]
     }
   }
 }

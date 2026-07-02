@@ -3,7 +3,7 @@
     "kapsul": {
       "command": "node",
       "args": [
-        "/Users/patel_parthk/Desktop/context hub/Context-Sync-main/mcp/index.js"
+        "<ABSOLUTE_PATH_TO>/mcp/index.js"
       ]
     }
   }
