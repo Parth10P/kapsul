@@ -20,13 +20,13 @@ if (!existsSync(DATA_DIR)) {
 
 // --- 2. Express HTTP Server Setup ---
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8345;
 
 // Enable CORS so the Chrome extension can communicate with this server
 app.use(cors());
 
 // Parse JSON bodies with a 10mb limit for large chat capsules
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '100mb' }));
 
 // POST endpoint to receive data from the Chrome extension
 app.post('/save-chat', async (req, res) => { // Notice the 'async' here

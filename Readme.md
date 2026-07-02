@@ -6,11 +6,10 @@
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![Status](https://img.shields.io/badge/Status-Active-success)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
-![Version](https://img.shields.io/badge/Version-1.1.0-purple)
+![Version](https://img.shields.io/badge/Version-1.0-purple)
 
 > **Never lose a conversation again.** Save, copy, download, and port your AI context across sessions, accounts, and any platform — Claude, ChatGPT, Gemini, or DeepSeek.
 
-> _Previously known as **Claude Context Exporter** — now expanded to support all major AI platforms._
 
 ```text
                       ██╗  ██╗ █████╗ ██████╗ ███████╗██╗   ██╗██╗     
@@ -140,54 +139,6 @@ No cloud servers. No sign-up. Everything runs locally in your browser.
 
 ---
 
-## 🖼️ Preview
-
-### Extension Popup — Unified conversation list with source badges
-
-![Kapsul Popup](assets/Preview.png)
-
-> The popup shows saved conversations from all four AI platforms in one place. Each card displays the conversation title, date, source AI badge (CLAUDE · CHATGPT · GEMINI · DEEPSEEK), a message count toggle, and per-card download/delete buttons.
-
----
-
-### Injected Export Panel — Copy, Download, or send to another AI
-
-![Injected Export Panel](assets/InjectedUI.png)
-
-> Clicking the **Export** button injected into the AI's toolbar opens this panel. Pick a destination AI to auto-inject the context, or use the **Copy** / **Download** buttons at the bottom to grab the conversation instantly.
-git 
----
-
-## 🏗️ Architecture
-
-```
-┌───────────────────────────────────────────────────────────────────────┐
-│                         Chrome Extension (MV3)                        │
-│                                                                       │
-│  ┌──────────────────┐    ┌──────────────────┐    ┌────────────────┐   │
-│  │  Content Scripts  │    │  Background       │    │  Popup UI      │   │
-│  │                  │    │  Service Worker   │    │                │   │
-│  │  content.js      │───▶│  (orchestrator)   │◀───│  popup.html    │   │
-│  │  (claude.ai)     │    │                  │    │  popup.js      │   │
-│  │                  │    │  • Gemini API     │    │  popup.css     │   │
-│  │  injectors/      │    │  • Message router │    │                │   │
-│  │  ├ chatgpt.js    │    │  • scrapeActiveTab│    └────────────────┘   │
-│  │  ├ gemini.js     │    └────────┬─────────┘                         │
-│  │  └ deepseek.js   │             │                                   │
-│  └──────────────────┘             ▼                                   │
-│                          ┌─────────────────┐                          │
-│                          │  Compression     │                          │
-│                          │  Pipeline        │                          │
-│                          │  (Gemini 2.5)    │                          │
-│                          └────────┬────────┘                          │
-│                                   │                                   │
-│                    ┌──────────────┴──────────────┐                    │
-│                    ▼                             ▼                    │
-│          chrome.storage.local              (IndexedDB                 │
-│          (unified index, 50 convos)         coming soon)              │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
 ### How it works under the hood
 
 **`content.js`** — Runs on every `claude.ai` page. Sets up a `MutationObserver` that watches the DOM for changes. When a new message appears, it triggers a debounced save (1.5 s delay to avoid saving mid-stream). Scrapes both user messages (`[data-testid="user-message"]`) and assistant responses (`.font-claude-response`), preserving code blocks. Injects the Export button with a panel offering send-to-AI, Copy, and Download.
@@ -211,7 +162,7 @@ Since this extension is not yet on the Chrome Web Store, install it in **Develop
 ### Step 1 — Download the extension files
 
 ```bash
-git clone https://github.com/Vineetpandey0/kapsul.git
+git clone https://github.com/Parth10P/kapsul.git
 cd kapsul
 ```
 
@@ -231,25 +182,25 @@ Click **"Load unpacked"** and select the folder containing `manifest.json`.
 
 You should see the 🦞 lobster icon appear in your Chrome toolbar. If it's hidden, click the puzzle piece icon and pin it.
 
-### Step 6 — Start the Local MCP Server (Optional)
+### Step 6 — Run the Setup Script (Optional: For IDE Context)
 
-To sync conversations directly to your local file system and access them from Desktop AI agents (via the Model Context Protocol):
+If you want to use Kapsul to sync context directly to your local IDE (like Antigravity, Cursor, or Claude Desktop) via the MCP Model Context Protocol, run the setup script:
 
+**Mac / Linux:**
 ```bash
-cd mcp
-npm install
-npm start
+chmod +x setup.sh
+./setup.sh
 ```
-The server will start on `localhost:3000` and save your conversations to `~/.kapsul-data`. You can configure your local Desktop AI to connect to the MCP server.
 
+**Windows:**
+Double-click the `setup.bat` file in your file explorer, or run it via command prompt:
+```cmd
+setup.bat
+```
 
 ---
 
 ## 🛠️ How to Use
-
-### Basic Usage (No API Key Required)
-
-The extension works **out of the box** without any configuration. It saves your raw conversations without AI compression.
 
 #### 1. Open any supported AI
 
@@ -278,46 +229,6 @@ Use the search bar to find any conversation by title or message content — acro
 #### 5. Export all
 
 Click **"Export all"** in the footer to download every saved conversation as a single JSON file.
-
----
-
-## 🔑 Setting Up Gemini API for Compression
-
-> **Compression is optional.** The extension saves full conversations without it.
-
-### Why Gemini for compression?
-
-**Gemini 2.5 Flash** is fast and has a generous free tier. The compression runs in the background service worker — your API key never touches a content script or any AI page.
-
-### Step 1 — Get a free Gemini API key
-
-1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Sign in with your Google account
-3. Click **"Create API Key"** and copy it
-
-### Step 2 — Add the key to background.js
-
-```javascript
-// Before:
-const GEMINI_API_KEY = "";
-
-// After:
-const GEMINI_API_KEY = "AIzaSy...yourkey...";
-```
-
-### Step 3 — Reload the extension
-
-Go to `chrome://extensions` → find Kapsul → click the **refresh** (↺) icon.
-
-### What compression does
-
-- **Code blocks** are extracted first and **never compressed** — preserved 100%
-- **User messages** are compressed to preserve intent
-- **Assistant messages** are compressed technically and losslessly
-- **Short messages** (< 120 chars) are skipped — not worth a round-trip
-- Processing is parallel (`Promise.all`) for speed
-
-> **Privacy:** With a key active, message text is sent to Google's Gemini API. Leave the key blank to keep everything 100% local.
 
 ---
 
@@ -351,42 +262,10 @@ Depending on your client, this might be a UI configuration menu or a JSON file (
 
 ---
 
-## 💉 One-Click Cross-Platform Injection
-
-Every supported AI has a native **Export** button injected directly into its toolbar by the extension.
-
-### How to use it
-
-1. Open any conversation on Claude, ChatGPT, Gemini, or DeepSeek
-2. Click the **Export** button in the toolbar
-3. A panel opens:
-
-```
-┌─────────────────────────────┐
-│  SEND CONTEXT TO             │
-├─────────────────────────────┤
-│  ◆  Gemini    Open & inject │
-│  ●  ChatGPT   Open & inject │
-│  ○  DeepSeek  Open & inject │
-├─────────────────────────────┤
-│ [ 📋 Copy ]  [ ⬇ Download ] │
-└─────────────────────────────┘
-```
-
 4. **Click a target AI** — a new tab opens, the context is typed into the input, and the Send button is automatically clicked. The AI receives full context and responds immediately.
 5. **Click Copy** — the conversation is formatted as plain text and written to your clipboard
 6. **Click Download** — the conversation is saved as a `.json` capsule to your computer
 
-### Injection reliability
-
-| Platform | Injection method | Auto-submit |
-|---|---|---|
-| Claude | `chrome.storage.local` pending key + `execCommand` | ✅ Yes |
-| ChatGPT | ProseMirror `execCommand + insertText` | ✅ Yes |
-| Gemini | Quill `innerHTML` + Angular event chain (triple-fire) | ✅ Yes |
-| DeepSeek | Native textarea setter + React synthetic events | ✅ Yes |
-
-Each injector uses multiple fallback selectors and a MutationObserver to survive SPA re-renders.
 
 ### Cross-platform send matrix
 
@@ -412,21 +291,25 @@ Every exported conversation follows this schema:
   "url": "https://claude.ai/chat/...",
   "savedAt": "2026-04-05T10:22:00.000Z",
   "source": "claude",
-  "version": 1,
+  "version": 2,
+  "attached_knowledge": [
+    {
+      "filename": "Career_Mapping_Form.pdf",
+      "extracted_text": "# Career Mapping Document\n\nThis form outlines the goals..."
+    }
+  ],
   "messages": [
     {
       "type": "user",
       "content": "How do I implement refresh token rotation?",
       "format": "text",
-      "timestamp": "2026-04-05T10:00:00.000Z",
-      "compressed": false
+      "timestamp": "2026-04-05T10:00:00.000Z"
     },
     {
       "type": "assistant",
       "content": "Refresh token rotation works by...\n\n```javascript\nconst rotate = async (token) => { ... }\n```",
       "format": "text",
-      "timestamp": "2026-04-05T10:00:00.000Z",
-      "compressed": true
+      "timestamp": "2026-04-05T10:00:00.000Z"
     }
   ]
 }
@@ -449,48 +332,49 @@ Continuing from where we left off: [your next question]
 
 ### Context window compatibility
 
+Because Kapsul now natively extracts and embeds PDF text directly into the JSON file offline, your payloads can become quite large.
+
 | AI | Context Window | Works with export? |
 |---|---|---|
 | Claude 3.5 Sonnet | 200k tokens | ✅ Excellent |
 | GPT-4o | 128k tokens | ✅ Great |
-| Gemini 1.5 Pro | 1M tokens | ✅ Best for large exports |
+| Gemini 1.5 Pro | 1M+ tokens | ✅ Best for massive multi-PDF exports |
 | DeepSeek V3 | 128k tokens | ✅ Good |
 | Mistral Large | 128k tokens | ✅ Good |
-| Llama 3 (local) | 8k–128k tokens | ⚠️ Use compression first |
+| Llama 3 (local) | 8k–128k tokens | ⚠️ May struggle with embedded PDFs |
 
 ---
 
-## ⚙️ Compression Pipeline
+## 📄 Local PDF Processing Pipeline
 
-> **Status:** Actively improved. Current pipeline uses Gemini 2.5 Flash. A fully local pipeline is in development.
+> **Status:** Fully localized! We completely removed the need for an external backend or Gemini API compression.
+
+Kapsul uses a lightweight, in-browser parsing engine (PDF.js) to extract text from your uploaded documents without ever sending your files to a 3rd-party server.
 
 ```
-Raw Conversation
+Raw Conversation + Uploaded PDF
       │
       ▼
-1. CODE BLOCK EXTRACTION
-   - All ``` blocks extracted with placeholders
-   - Code is NEVER sent to any model — preserved verbatim
+1. DOM INTERCEPTION (Capture Phase)
+   - Extension detects drag-and-drop or file upload events
+   - Snatches the raw PDF before the web app's UI clears it
 
       │
       ▼
-2. MESSAGE FILTERING
-   - Keep last 5 user messages
-   - Keep last 5 assistant messages
-   - Maintain original interleaved order
+2. LOCAL PARSING (PDF.js offline)
+   - The PDF is parsed natively inside the browser tab
+   - Text, headers, and structure are converted to Markdown
 
       │
       ▼
-3. PER-MESSAGE COMPRESSION (Gemini 2.5 Flash, parallel)
-   - Skip messages < 120 characters
-   - User messages: preserve intent, remove filler
-   - Assistant: technical lossless compression
+3. JSON EMBEDDING
+   - The raw markdown is appended to the `attached_knowledge` array
+   - The original Base64 file is safely discarded to save memory
 
       │
       ▼
-4. CODE BLOCK RESTORATION
-   - Placeholders replaced with original code
-   - Stored in chrome.storage.local
+4. EXPORT
+   - The fully self-contained JSON is sent to your local MCP server or clipboard
 ```
 
 ### Planned improvements
@@ -532,13 +416,6 @@ kapsul/
 └── README.md
 ```
 
-### Key constants
-
-| File | Constant | Default | Description |
-|---|---|---|---|
-| `content.js` | `MAX_CONVERSATIONS` | `50` | Max conversations stored locally |
-| `content.js` | `DEBOUNCE_MS` | `1500` | ms to wait before saving after DOM change |
-| `background.js` | `GEMINI_API_KEY` | `""` | Your Gemini API key (leave blank to skip compression) |
 
 ### Host permissions
 
@@ -606,31 +483,6 @@ MIT License — see [LICENSE](./LICENSE) for details.
 
 ---
 
-## 💬 FAQ
-
-**Q: Does this send my conversations to any server?**  
-A: Only if you add a Gemini API key for compression. Without it, everything stays 100% local in `chrome.storage.local`. The cross-platform injection pipeline uses local storage as a relay — no external calls.
-
-**Q: The Export button doesn't appear in the toolbar.**  
-A: The injectors retry up to 30 times (every 500 ms) and watch via MutationObserver. Try refreshing the page. If it consistently fails, the host site may have updated its DOM — please open an issue.
-
-**Q: Context was injected but the AI didn't auto-submit.**  
-A: Injectors wait up to 4 s for the Send button to become enabled. If it times out, a banner appears asking you to press Send manually.
-
-**Q: What happens when an AI site changes its DOM?**  
-A: Each injector has multiple fallback selectors. We'll push fixes as sites update. If you notice a break, open an issue with the platform name.
-
-**Q: How much storage does this use?**  
-A: Chrome's `chrome.storage.local` allows 5 MB by default. 50 conversations from all four AIs combined sit comfortably under 2 MB.
-
-**Q: Can I use this with Claude's Projects feature?**  
-A: Yes. The extension detects any conversation URL pattern including project UUIDs.
-
-**Q: I want to send context to Mistral / Perplexity — can I?**  
-A: Not natively yet, but use the **Copy** button in the Export panel and paste into any AI with a simple prompt like *"Here's context from a previous conversation: [paste]. Continue from here."*
-
----
-
 <div align="center">
 
 Built with 🦞 and frustration by developers who kept hitting AI context limits.
@@ -638,4 +490,3 @@ Built with 🦞 and frustration by developers who kept hitting AI context limits
 **Stop losing context. Start syncing it.**
 
 </div>
-checking
