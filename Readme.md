@@ -1,4 +1,4 @@
-# 🦞 Kapsul
+# 🦞 KAPSUL
 
 
 ![Chrome Extension](https://img.shields.io/badge/Platform-Chrome%20Extension-blue)
