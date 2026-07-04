@@ -316,7 +316,7 @@ async function syncToLocalServer(chatData, btnEl) {
   const originalHTML = btnEl.innerHTML;
   
   try {
-    const response = await fetch("http://localhost:3000/save-chat", {
+    const response = await fetch("http://localhost:8345/save-chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"

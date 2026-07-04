@@ -27,18 +27,14 @@
 1. [The Problem](#-the-problem)
 2. [The Solution](#-the-solution)
 3. [Features](#-features)
-4. [Preview](#-preview)
-5. [Architecture](#-architecture)
-6. [Installation](#-installation)
-7. [How to Use](#-how-to-use)
-8. [Setting Up Gemini API for Compression](#-setting-up-gemini-api-for-compression)
-9. [One-Click Cross-Platform Injection](#-one-click-cross-platform-injection)
-10. [Exporting & Porting Context to Other AIs](#-exporting--porting-context-to-other-ais)
-11. [Compression Pipeline](#-compression-pipeline)
-12. [File Structure](#-file-structure)
-13. [Roadmap](#-roadmap)
-14. [Contributing](#-contributing)
-15. [License](#-license)
+4. [Installation](#-installation)
+5. [How to Use](#-how-to-use)
+6. [Exporting & Porting Context to Other AIs](#-exporting--porting-context-to-other-ais)
+7. [Local PDF Processing Pipeline](#-local-pdf-processing-pipeline)
+8. [File Structure](#-file-structure)
+9. [Roadmap](#-roadmap)
+10. [Contributing](#-contributing)
+11. [License](#-license)
 
 ---
 
@@ -64,7 +60,7 @@ This is the problem **Kapsul** was built to solve.
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                                                                              │
-│  Claude / ChatGPT / Gemini / DeepSeek  ──▶  🦞 Kapsul Extension          │
+│  Claude / ChatGPT / Gemini / DeepSeek  ──▶  Kapsul Extension             │
 │                                                                              │
 │  Extension ──▶ One click ──▶ Any Web AI (auto-injected & auto-submitted)     │
 │       │                                                                      │
@@ -135,7 +131,6 @@ No cloud servers. No sign-up. Everything runs locally in your browser.
 | Up to 50 conversations stored locally | ✅ Live |
 | SPA navigation detection (no page reload needed) | ✅ Live |
 | Code blocks extracted and preserved verbatim | ✅ Live |
-| AI-powered compression (Gemini 2.5 Flash, optional) | ✅ Optional |
 
 ---
 
@@ -149,7 +144,7 @@ No cloud servers. No sign-up. Everything runs locally in your browser.
 
 **`injectors/deepseek.js`** — Runs on `chat.deepseek.com`. Scrapes and saves DeepSeek conversations. Injects the Export button styled to match DeepSeek's native design. Handles context injection into the textarea and auto-submit. Exposes Copy and Download.
 
-**`background.js`** — The service worker. Holds the Gemini API key securely (never in content scripts). Handles compression requests. Listens for `scrapeActiveTab` from the popup and routes `scrapeNow` to the correct content script.
+**`background.js`** — The service worker. Listens for `scrapeActiveTab` from the popup and routes `scrapeNow` to the correct content script.
 
 **`popup.js / popup.html / popup.css`** — The extension popup. On open, auto-scrapes the active AI tab. Renders all saved conversations from all four platforms in one unified list, with colour-coded source badges, search, expand/collapse, per-card JSON export, and delete.
 
@@ -180,7 +175,7 @@ Click **"Load unpacked"** and select the folder containing `manifest.json`.
 
 ### Step 5 — Verify installation
 
-You should see the 🦞 lobster icon appear in your Chrome toolbar. If it's hidden, click the puzzle piece icon and pin it.
+You should see the Kapsul logo appear in your Chrome toolbar. If it's hidden, click the puzzle piece icon and pin it.
 
 ### Step 6 — Run the Setup Script (Optional: For IDE Context)
 
@@ -212,7 +207,7 @@ Just use the AI as you normally would. The extension silently captures every mes
 
 #### 3. Open the popup to view all conversations
 
-Click the 🦞 icon in your toolbar. The popup auto-scrapes the active tab and immediately shows all saved conversations, sorted by most recent, with colour-coded source badges.
+Click the Kapsul icon in your toolbar. The popup auto-scrapes the active tab and immediately shows all saved conversations, sorted by most recent, with colour-coded source badges.
 
 Each card shows:
 - **Title** — inferred from your first message
@@ -238,7 +233,16 @@ This repository includes a local Model Context Protocol (MCP) server in the `mcp
 
 The server is designed to be **auto-spawned by the MCP client on demand**, rather than run manually as a persistent background service.
 
-### Configuring Your IDE / MCP Client
+### IDE Integration: The `/kapsul` Skill
+
+Once the MCP server is configured (see below), you can use Kapsul directly in IDEs like Antigravity, Cursor, or Windsurf. We provide a pre-made IDE Skill so your agent automatically fetches and reads your synced chats when you type `/kapsul`. 
+
+To install the skill automatically for your specific IDE, just run the setup script:
+
+```bash
+./setup.sh
+```
+The script will ask you which IDE you are using and configure the skill accordingly!
 
 To set this up for any general-purpose MCP client (like **Antigravity, Cursor, Codex, Claude Code, or Claude Desktop**), you need to register it in your IDE's MCP configuration settings.
 
@@ -261,10 +265,6 @@ Depending on your client, this might be a UI configuration menu or a JSON file (
 > **Note:** Because the server is auto-spawned by your IDE/client, the local Express endpoint (`/save-chat`, used by the popup's "Sync to Local" button) will **only be reachable while your IDE currently has this process spawned**. It is NOT a persistent background service under this setup.
 
 ---
-
-4. **Click a target AI** — a new tab opens, the context is typed into the input, and the Send button is automatically clicked. The AI receives full context and responds immediately.
-5. **Click Copy** — the conversation is formatted as plain text and written to your clipboard
-6. **Click Download** — the conversation is saved as a `.json` capsule to your computer
 
 
 ### Cross-platform send matrix
@@ -422,7 +422,6 @@ kapsul/
 | Host | Purpose |
 |---|---|
 | `https://claude.ai/*` | Scraping + Export button injection |
-| `https://generativelanguage.googleapis.com/*` | Gemini compression API |
 | `https://gemini.google.com/*` | Scraping + Export button injection |
 | `https://chatgpt.com/*` | Scraping + Export button injection |
 | `https://chat.deepseek.com/*` | Scraping + Export button injection |
@@ -485,7 +484,7 @@ MIT License — see [LICENSE](./LICENSE) for details.
 
 <div align="center">
 
-Built with 🦞 and frustration by developers who kept hitting AI context limits.
+Built with passion and frustration by developers who kept hitting AI context limits.
 
 **Stop losing context. Start syncing it.**
 
