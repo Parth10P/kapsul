@@ -1,4 +1,4 @@
-# 🦞 KAPSUL
+# <img src="icons/icon48.png" width="32" height="32" alt="Logo" valign="middle"> KAPSUL
 
 
 ![Chrome Extension](https://img.shields.io/badge/Platform-Chrome%20Extension-blue)
