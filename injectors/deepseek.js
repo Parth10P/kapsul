@@ -208,26 +208,69 @@ function showBanner(msg, isError = false) {
   setTimeout(() => { b.style.opacity = "0"; setTimeout(() => b.remove(), 300); }, 3500);
 }
 
+// ── Download current chat as JSON ──────────────────────────────────────────────
 function downloadCurrentChat() {
   const messages = scrapeCurrentConversation();
-  if (!messages.length && !_attachedKnowledge.length) { showBanner("No conversation found to download.", true); return; }
+  if (!messages.length && !_attachedKnowledge.length) { showToast("No messages found to download.", true); return; }
+  
   const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "conversation";
-  const data = {
-    id: `scraped_${Date.now()}`,
+  const capsule = {
+    id: `deepseek_${Date.now()}`,
     title, url: window.location.href, messages,
     attached_knowledge: _attachedKnowledge,
-    savedAt: new Date().toISOString(),
-    source: "deepseek", version: 1,
+    savedAt: new Date().toISOString(), source: "deepseek", version: 1
   };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  
+  const blob = new Blob([JSON.stringify(capsule, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = `${title.replace(/[^\w\d]+/g, "_").slice(0, 50)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  document.body.appendChild(a); a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); a.remove();
+}
+
+// ── Sync current chat to local DB (via background → localhost:8345) ─────────────
+async function syncCurrentChat(btn) {
+  const originalHtml = btn ? btn.innerHTML : "Sync to Local";
+  if (btn) { btn.innerHTML = "Syncing..."; btn.disabled = true; }
+  
+  const messages = scrapeCurrentConversation();
+  if (!messages.length && !_attachedKnowledge.length) { 
+    if (btn) {
+      btn.innerHTML = "No messages";
+      btn.style.background = "rgba(239,68,68,0.15)";
+      btn.style.color = "#ef4444";
+      btn.style.border = "1px solid rgba(239,68,68,0.4)";
+      btn.disabled = false;
+      setTimeout(() => { closePanel(); btn.innerHTML = originalHtml; btn.style.background = ""; btn.style.color = "#4285F4"; btn.style.border = ""; }, 2000);
+    }
+    return; 
+  }
+  
+  const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "conversation";
+  const capsule = {
+    id: `deepseek_${Date.now()}`,
+    title, url: window.location.href, messages,
+    attached_knowledge: _attachedKnowledge,
+    savedAt: new Date().toISOString(), source: "deepseek", version: 1
+  };
+  
+  chrome.runtime.sendMessage({ action: "syncToLocalServer", data: capsule }, (res) => {
+    btn.disabled = false;
+    if (res?.ok) {
+      btn.innerHTML = "✓ Synced!";
+      btn.style.background = "rgba(16,163,127,0.15)";
+      btn.style.color = "#10a37f";
+      btn.style.border = "1px solid rgba(16,163,127,0.4)";
+      setTimeout(() => { closePanel(); btn.innerHTML = originalHtml; btn.style.background = ""; btn.style.color = "#4285F4"; btn.style.border = ""; }, 1500);
+    } else {
+      btn.innerHTML = "Server offline";
+      btn.style.background = "rgba(239,68,68,0.15)";
+      btn.style.color = "#ef4444";
+      btn.style.border = "1px solid rgba(239,68,68,0.4)";
+      setTimeout(() => { closePanel(); btn.innerHTML = originalHtml; btn.style.background = ""; btn.style.color = "#4285F4"; btn.style.border = ""; }, 2500);
+    }
+  });
 }
 
 function copyCurrentChat() {
@@ -300,8 +343,8 @@ function sendFromThisPage(target) {
 // AI options for DeepSeek panel (excludes DeepSeek itself)
 const CC_AI_OPTIONS = [
   {
-    id: "claude", label: "Claude", color: "#d97706", bg: "rgba(217,119,6,0.12)",
-    svg: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14.5 2C11 2 8.5 4.5 8.5 7.5c0 1.5.5 2.8 1.4 3.8L4 17.5l1.5 1.5 5.9-6.2c1 .9 2.3 1.4 3.6 1.4C18 14.2 20.5 11.7 20.5 8.5S18 2 14.5 2zm0 2c2.2 0 4 1.8 4 4s-1.8 4-4 4-4-1.8-4-4 1.8-4 4-4z" fill="#d97706"/></svg>`
+    id: "claude", label: "Claude", color: "#D97757", bg: "rgba(217,119,87,0.12)",
+    svg: `<svg width="14" height="14" viewBox="0 0 24 24" fill="#D97757"><path d="M12.7,2.2c-.3-.9-1.2-.9-1.5,0l-1.6,4.6c-.2.5-.6.9-1.1,1.1L3.9,9.5c-.9.3-.9,1.2,0,1.5l4.6,1.6c.5.2.9.6,1.1,1.1l1.6,4.6c.3.9,1.2.9,1.5,0l1.6-4.6c.2-.5.6-.9,1.1-1.1l4.6-1.6c.9-.3.9-1.2,0-1.5l-4.6-1.6c-.5-.2-.9-.6-1.1-1.1L12.7,2.2Z"/></svg>`
   },
   {
     id: "gemini", label: "Gemini", color: "#4285F4", bg: "rgba(66,133,244,0.12)",
@@ -309,7 +352,7 @@ const CC_AI_OPTIONS = [
   },
   {
     id: "chatgpt", label: "ChatGPT", color: "#10a37f", bg: "rgba(16,163,127,0.12)",
-    svg: `<svg width="14" height="14" viewBox="0 0 24 24" fill="#10a37f"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>`
+    svg: `<svg width="14" height="14" viewBox="0 0 24 24" fill="#10a37f"><path d="M22.28 15.55c-.24-1.3-.9-2.45-1.9-3.32.7-1.35.8-2.88.27-4.32-.54-1.42-1.6-2.52-2.98-3.08-1.38-.56-2.9-.5-4.22.18-.85-1-2.02-1.66-3.3-1.85-1.3-.18-2.65.13-3.75.87-1.1.73-1.85 1.83-2.12 3.12-.66 1.35-.74 2.87-.23 4.28.53 1.4 1.58 2.5 2.95 3.05 1.36.55 2.87.48 4.17-.2.85 1 2.03 1.66 3.3 1.85 1.3.18 2.65-.13 3.76-.87 1.1-.73 1.85-1.83 2.12-3.12 1.36-.57 2.45-1.6 3.02-2.96.55-1.37.5-2.9-.17-4.23zM12 20.32c-1.66 0-3.15-.9-4-2.35l4-2.35c.2-.12.33-.33.33-.56v-4.7l4.08 2.36c.02 0 .04 0 .06.02v4.73c0 1.57-1.28 2.85-2.85 2.85zm-7.6-6.17c-.83-1.42-.83-3.26 0-4.68l4.08 2.36v4.7L4.4 14.15zm10.7-9.45c.83 1.42.83 3.26 0 4.68l-4.08-2.36v-4.7l4.08-2.35zm3.62 9.45l-4.08-2.36v-4.7l4 2.35c.83 1.43.83 3.27 0 4.7l-4.08 2.35-.06.03z"/></svg>`
   },
 ];
 
@@ -374,16 +417,18 @@ function ensureStyles() {
     }
     #cc-ask-ai-panel {
       position: fixed !important;
-      background: #18181b !important;
-      border: 1px solid rgba(255,255,255,0.1) !important;
-      border-radius: 14px !important;
-      padding: 8px !important;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.1) !important;
+      background: hsl(var(--bg-000, 220 10% 12%) / 0.85) !important;
+      backdrop-filter: blur(12px) !important;
+      -webkit-backdrop-filter: blur(12px) !important;
+      border: 1px solid hsl(var(--border-300, 220 10% 25%) / 0.3) !important;
+      border-radius: 16px !important;
+      padding: 10px !important;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.03) !important;
       z-index: 2147483647 !important;
       display: none !important;
       flex-direction: column !important;
-      gap: 3px !important;
-      min-width: 210px !important;
+      gap: 4px !important;
+      min-width: 220px !important;
       font-family: system-ui, sans-serif !important;
     }
     #cc-ask-ai-panel.cc-open {
@@ -454,11 +499,11 @@ function ensureStyles() {
       white-space: nowrap !important;
     }
     .cc-action-btn:hover {
-      background: rgba(255,255,255,0.07) !important;
-      border-color: rgba(255,255,255,0.18) !important;
-      color: rgba(255,255,255,0.9) !important;
+      background: hsl(var(--bg-100, 220 10% 16%)) !important;
+      border-color: hsl(var(--border-200, 220 10% 30%)) !important;
+      color: hsl(var(--text-200, 0 0% 90%)) !important;
     }
-    .cc-action-btn:active { opacity: 0.75 !important; }
+    .cc-action-btn:active { opacity: 0.75 !important; transform: scale(0.96) !important; }
   `;
   document.head.appendChild(s);
 }
@@ -544,7 +589,35 @@ function buildPanel() {
 
   actionRow.appendChild(copyBtn);
   actionRow.appendChild(dlBtn);
+  
+  const syncRow = document.createElement("div");
+  syncRow.className = "cc-action-row";
+  
+  const syncBtn = document.createElement("button");
+  syncBtn.className = "cc-action-btn";
+  syncBtn.type = "button";
+  syncBtn.style.background = "rgba(66, 133, 244, 0.1)";
+  syncBtn.style.color = "#4285F4";
+  syncBtn.style.border = "1px solid rgba(66, 133, 244, 0.3)";
+  syncBtn.title = "Sync to Local Database";
+  syncBtn.innerHTML = `
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+    Sync to Local
+  `;
+  syncBtn.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    syncCurrentChat(syncBtn);
+  });
+  
+  syncRow.appendChild(syncBtn);
+  
   panel.appendChild(actionRow);
+  panel.appendChild(syncRow);
 
   document.body.appendChild(panel);
   return panel;

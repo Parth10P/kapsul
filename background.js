@@ -71,6 +71,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
 
+    // ── Sync to Local Server (bypasses CSP on AI pages) ───────────
+    case "syncToLocalServer": {
+      fetch("http://localhost:8345/save-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(message.data)
+      })
+      .then(r => {
+        if (!r.ok) throw new Error("Server returned " + r.status);
+        sendResponse({ ok: true });
+      })
+      .catch(err => {
+        sendResponse({ ok: false, error: err.message });
+      });
+      return true;
+    }
+
     default:
       break;
   }

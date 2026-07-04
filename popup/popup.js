@@ -316,6 +316,8 @@ async function syncToLocalServer(chatData, btnEl) {
   const originalHTML = btnEl.innerHTML;
   
   try {
+    btnEl.innerHTML = "Syncing...";
+    
     const response = await fetch("http://localhost:8345/save-chat", {
       method: "POST",
       headers: {
@@ -332,13 +334,15 @@ async function syncToLocalServer(chatData, btnEl) {
     btnEl.style.width = "auto";
     btnEl.style.padding = "0 8px";
     btnEl.style.fontSize = "12px";
+    btnEl.style.color = "#10a37f"; // Green for success
     btnEl.innerHTML = "Synced ✅";
   } catch (error) {
     console.error("Sync error:", error);
     btnEl.style.width = "auto";
     btnEl.style.padding = "0 8px";
     btnEl.style.fontSize = "12px";
-    btnEl.innerHTML = "Server Offline ❌";
+    btnEl.style.color = "#ef4444"; // Red for error
+    btnEl.innerHTML = "Error ❌";
   }
   
   // Revert back to the original icon after 2 seconds
@@ -347,6 +351,7 @@ async function syncToLocalServer(chatData, btnEl) {
     btnEl.style.width = "";
     btnEl.style.padding = "";
     btnEl.style.fontSize = "";
+    btnEl.style.color = "";
   }, 2000);
 }
 

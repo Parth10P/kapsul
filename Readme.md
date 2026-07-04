@@ -225,6 +225,13 @@ Use the search bar to find any conversation by title or message content — acro
 
 Click **"Export all"** in the footer to download every saved conversation as a single JSON file.
 
+#### 6. Clear your database
+
+If you want to completely wipe all your previously synced chats and start fresh, run this command in your terminal to clear your local database:
+```bash
+rm -rf ~/.kapsul-data/*
+```
+
 ---
 
 ## 🤖 MCP Setup (Auto-Spawn Server)
