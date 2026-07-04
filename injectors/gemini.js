@@ -447,15 +447,16 @@ function ensureStyles() {
   s.id = "cc-styles";
   s.textContent = `
     #cc-ask-ai-btn {
+      position: absolute !important; top: -40px !important; left: 10px !important; z-index: 100 !important;
       display: inline-flex !important; align-items: center !important; gap: 5px !important;
       padding: 0 10px !important; height: 32px !important;
-      background: transparent !important; border: 1px solid rgba(255,255,255,0.15) !important;
+      background: #18181b !important; border: 1px solid rgba(255,255,255,0.15) !important;
       border-radius: 8px !important; color: rgba(255,255,255,0.65) !important;
       cursor: pointer !important; font-family: system-ui, sans-serif !important;
       font-size: 12px !important; font-weight: 600 !important;
       transition: background 0.15s, border-color 0.15s, color 0.15s !important;
       flex-shrink: 0 !important; white-space: nowrap !important;
-      outline: none !important; box-shadow: none !important; vertical-align: middle !important;
+      outline: none !important; box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important; vertical-align: middle !important;
     }
     #cc-ask-ai-btn:hover {
       background: rgba(255,255,255,0.07) !important;
@@ -674,7 +675,41 @@ function createAskAIButton() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function findGeminiSlot() {
-  return document.querySelector(".leading-actions-wrapper") || null;
+  // PRIMARY: .leading-actions-wrapper — proven to exist in Gemini's regular DOM
+  // (this is the toolbar row inside the input box, NOT a Shadow DOM element)
+  const toolbar = document.querySelector(".leading-actions-wrapper");
+  if (toolbar) {
+    // Walk up from the toolbar to find the overall input container
+    // The toolbar lives inside the input area's parent container
+    const inputContainer = toolbar.closest('.input-area-container')
+      || toolbar.closest('.input-buttons-wrapper-bottom')
+      || toolbar.parentElement?.parentElement;
+    if (inputContainer) {
+      inputContainer.style.position = 'relative';
+      inputContainer.style.overflow = 'visible';
+      return inputContainer;
+    }
+    // Fallback: use toolbar's direct parent
+    const parent = toolbar.parentElement;
+    if (parent) {
+      parent.style.position = 'relative';
+      parent.style.overflow = 'visible';
+    }
+    return parent;
+  }
+
+  // FALLBACK: look for any container that wraps a rich-textarea
+  const richTextarea = document.querySelector("rich-textarea");
+  if (richTextarea) {
+    const parent = richTextarea.parentElement;
+    if (parent) {
+      parent.style.position = 'relative';
+      parent.style.overflow = 'visible';
+    }
+    return parent;
+  }
+
+  return null;
 }
 
 function injectGeminiButton() {
@@ -683,8 +718,7 @@ function injectGeminiButton() {
   const slot = findGeminiSlot();
   if (!slot) return;
   const btn = createAskAIButton();
-  const toolbox = slot.querySelector("toolbox-drawer");
-  toolbox ? slot.insertBefore(btn, toolbox) : slot.appendChild(btn);
+  slot.appendChild(btn);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

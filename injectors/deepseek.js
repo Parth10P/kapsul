@@ -318,15 +318,20 @@ function ensureStyles() {
   const s = document.createElement("style");
   s.id = "cc-styles";
   s.textContent = `
-    /* ── Export button: matches DeepSeek ds-toggle-button--md style ── */
+    /* ── Export button: matches DeepSeek ds-toggle ── */
     #cc-ask-ai-btn {
+      position: absolute !important;
+      top: -40px !important;
+      left: 10px !important;
+      z-index: 100 !important;
       display: inline-flex !important;
       align-items: center !important;
+      justify-content: center !important;
       gap: 4px !important;
       padding: 0 8px !important;
       height: 32px !important;
       min-width: 0 !important;
-      background: transparent !important;
+      background: #18181b !important;
       border: 1.5px solid var(--dsw-alias-border-secondary, rgba(255,255,255,0.12)) !important;
       border-radius: 8px !important;
       color: var(--dsw-alias-label-primary, rgba(255,255,255,0.7)) !important;
@@ -339,9 +344,7 @@ function ensureStyles() {
       flex-shrink: 0 !important;
       white-space: nowrap !important;
       outline: none !important;
-      box-shadow: none !important;
-      position: relative !important;
-      transform: translateZ(0px) !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
       user-select: none !important;
     }
     #cc-ask-ai-btn:hover {
@@ -595,9 +598,36 @@ function createAskAIButton() {
   return btn;
 }
 
-// DeepSeek toolbar injection
 function findDeepSeekSlot() {
-  return document.querySelector(".ec4f5d61");
+  // Strategy 1: direct ID
+  let input = document.getElementById("chat-input");
+
+  // Strategy 2: any textarea on the page
+  if (!input) {
+    input = document.querySelector("textarea");
+  }
+
+  // Strategy 3: any visible contenteditable in the bottom half
+  if (!input) {
+    const allCe = document.querySelectorAll('[contenteditable="true"]');
+    for (const el of allCe) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 100 && rect.bottom > window.innerHeight * 0.4 && el.offsetParent !== null) {
+        input = el;
+        break;
+      }
+    }
+  }
+
+  if (!input) return null;
+
+  // Walk up to find a suitable wrapper
+  const wrapper = input.closest('.ec4f5d61') || input.closest('.fad62c2f') || input.closest('form') || input.parentElement;
+  if (wrapper) {
+    wrapper.style.position = 'relative';
+    wrapper.style.overflow = 'visible';
+  }
+  return wrapper;
 }
 
 function injectDeepSeekButton() {
@@ -607,7 +637,7 @@ function injectDeepSeekButton() {
   if (!slot) return;
 
   const btn = createAskAIButton();
-  slot.insertBefore(btn, slot.firstChild);
+  slot.appendChild(btn);
 }
 
 // BLOCK D — Keep button alive

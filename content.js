@@ -386,12 +386,16 @@ function ensureStyles() {
   s.id = "cc-styles";
   s.textContent = `
     #cc-ask-ai-btn {
+      position: absolute !important;
+      top: -40px !important;
+      left: 0px !important;
+      z-index: 100 !important;
       display: inline-flex !important;
       align-items: center !important;
       gap: 5px !important;
       padding: 0 10px !important;
       height: 32px !important;
-      background: transparent !important;
+      background: hsl(var(--bg-000)) !important;
       border: 1px solid hsl(var(--border-300) / 0.45) !important;
       border-radius: 8px !important;
       color: hsl(var(--text-400)) !important;
@@ -403,7 +407,7 @@ function ensureStyles() {
       flex-shrink: 0 !important;
       white-space: nowrap !important;
       outline: none !important;
-      box-shadow: none !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
     }
     #cc-ask-ai-btn:hover {
       background: hsl(var(--bg-200)) !important;
@@ -508,30 +512,30 @@ function ensureStyles() {
 }
 
 // ── Find exact injection point from real Claude DOM ───────────────────────────
-// Claude toolbar structure:
-//   <div class="relative flex gap-2 w-full items-center">          ← toolbar row
-//     <div class="relative flex-1 flex items-center shrink ...">   ← left side
-//       <div>                                                       ← wraps + button
-//         <button aria-label="Add files, connectors, and more">    ← the + btn
-//       <div class="flex flex-row items-center min-w-0 gap-1">     ← chip slot (inject here)
-//     <div>                                                         ← model selector
-//     <div>                                                         ← voice btn
 function findSlot() {
-  // 1. Anchor on the + button — most stable identifier
-  const plusBtn = document.querySelector('button[aria-label="Add files, connectors, and more"]');
-  if (!plusBtn) return null;
+  // Strategy 1: contenteditable div (conversation page)
+  let editor = document.querySelector('div[contenteditable="true"]');
 
-  // 2. Its grandparent is the flex-1 container. Find the chip slot inside it.
-  const flexContainer = plusBtn.closest('.relative.flex-1') || plusBtn.parentElement?.parentElement;
-  if (!flexContainer) return null;
+  // Strategy 2: any visible contenteditable in the bottom half of viewport (homepage)
+  if (!editor) {
+    const allCe = document.querySelectorAll('[contenteditable="true"]');
+    for (const el of allCe) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 100 && rect.bottom > window.innerHeight * 0.4 && el.offsetParent !== null) {
+        editor = el;
+        break;
+      }
+    }
+  }
 
-  // 3. The chip slot is a flex row inside that container (after the + button wrapper)
-  const chipSlot = flexContainer.querySelector('.flex.flex-row.items-center.min-w-0.gap-1');
-  if (chipSlot) return chipSlot;
+  if (!editor) return null;
 
-  // 4. Fallback: insert right after the + button's wrapper div
-  const plusWrapper = plusBtn.parentElement;
-  return plusWrapper?.parentElement || null;
+  const wrapper = editor.closest('fieldset') || editor.closest('form') || editor.parentElement;
+  if (wrapper) {
+    wrapper.style.position = 'relative';
+    wrapper.style.overflow = 'visible';
+  }
+  return wrapper;
 }
 
 function buildPanel() {
@@ -669,12 +673,10 @@ function injectButton() {
     e.stopPropagation();
     _panelOpen ? closePanel() : openPanel(btn);
   });
-
   document.addEventListener("click", (e) => {
     if (_panelOpen && !_panel?.contains(e.target) && e.target !== btn) closePanel();
   });
 
-  // Insert into chip slot
   slot.appendChild(btn);
 }
 
@@ -755,6 +757,11 @@ async function init() {
   checkAndInjectPendingContext();
   setupFileInterception();
   await restoreAttachedKnowledge();
+
+  // Always try to inject the Export button (homepage or conversation)
+  _injectAttempts = 0;
+  retryInject();
+
   if (!isConversationPage()) {
     let last = window.location.href;
     const poll = setInterval(() => {
@@ -767,8 +774,6 @@ async function init() {
   }
   startObserver();
   scheduleConversationSave();
-  _injectAttempts = 0;
-  retryInject();
 }
 
 if (document.readyState === "loading") {

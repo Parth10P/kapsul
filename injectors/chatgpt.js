@@ -309,12 +309,16 @@ function ensureStyles() {
   s.id = "cc-styles";
   s.textContent = `
     #cc-ask-ai-btn {
+      position: absolute !important;
+      top: -40px !important;
+      left: 10px !important;
+      z-index: 100 !important;
       display: inline-flex !important;
       align-items: center !important;
       gap: 5px !important;
       padding: 0 10px !important;
       height: 32px !important;
-      background: transparent !important;
+      background: #18181b !important;
       border: 1px solid rgba(255,255,255,0.15) !important;
       border-radius: 8px !important;
       color: rgba(255,255,255,0.65) !important;
@@ -326,7 +330,7 @@ function ensureStyles() {
       flex-shrink: 0 !important;
       white-space: nowrap !important;
       outline: none !important;
-      box-shadow: none !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
       vertical-align: middle !important;
     }
     #cc-ask-ai-btn:hover {
@@ -562,11 +566,15 @@ function createAskAIButton() {
   return btn;
 }
 
-// ChatGPT toolbar injection
 function findChatGPTSlot() {
-  const plusBtn = document.querySelector('button[data-testid="composer-plus-btn"]');
-  if (!plusBtn) return null;
-  return plusBtn.closest("span") || plusBtn.parentElement;
+  const input = document.getElementById('prompt-textarea');
+  if (!input) return null;
+  const wrapper = input.closest('form') || input.parentElement;
+  if (wrapper) {
+    wrapper.style.position = 'relative';
+    wrapper.style.overflow = 'visible';
+  }
+  return wrapper;
 }
 
 function injectChatGPTButton() {
@@ -576,7 +584,7 @@ function injectChatGPTButton() {
   if (!slot) return;
 
   const btn = createAskAIButton();
-  slot.parentElement?.insertBefore(btn, slot.nextSibling) || slot.parentElement?.appendChild(btn);
+  slot.appendChild(btn);
 }
 
 // BLOCK D — Keep button alive
