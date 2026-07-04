@@ -3,34 +3,6 @@
 const STORAGE_KEY = "claude_conversations";
 const PENDING_INJECT_KEY = "pending_context_inject";
 
-const GEMINI_API_KEY = ""; // keep as is
-const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
-
-// ── Gemini API call ─────────────────────────────────────────────
-async function callGemini(systemPrompt, userPrompt) {
-  if (!GEMINI_API_KEY) {
-    throw new Error("No Gemini API key");
-  }
-
-  const res = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
-    }),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(errText);
-  }
-
-  const data = await res.json();
-  return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
-}
 
 // ── AI target URLs ──────────────────────────────────────────────
 const AI_URLS = {
@@ -43,26 +15,6 @@ const AI_URLS = {
 // ── Message listener ────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {
-
-    // ── Compress a single message via Gemini ──────────────────────
-    case "compressMessage": {
-      const { type, content } = message;
-
-      const systemPrompt =
-        type === "assistant"
-          ? "Compress assistant message (technical, lossless)."
-          : "Compress user message (preserve intent).";
-
-      callGemini(systemPrompt, content)
-        .then((compressed) => {
-          sendResponse({ ok: true, compressed: compressed || content });
-        })
-        .catch((err) => {
-          sendResponse({ ok: false, compressed: null, error: err.message });
-        });
-
-      return true;
-    }
 
     // ── Scrape active tab (any supported AI site) ─────────────────
     case "scrapeActiveTab": {
@@ -102,6 +54,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       });
 
+      return true;
+    }
+
+    // ── Update extension toolbar icon based on theme ─────────────
+    case "updateThemeIcon": {
+      const { isDark } = message;
+      chrome.action.setIcon({
+        path: {
+          "16": isDark ? "icons/icon16_white.png" : "icons/icon16.png",
+          "48": isDark ? "icons/icon48_white.png" : "icons/icon48.png",
+          "128": isDark ? "icons/icon128_white.png" : "icons/icon128.png"
+        }
+      });
+      sendResponse({ ok: true });
       return true;
     }
 

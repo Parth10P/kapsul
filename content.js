@@ -1,64 +1,5 @@
 // content.js — DOM Scraper + Send-to-AI button for Claude.ai
 
-// ── Code-block helpers ────────────────────────────────────────────────────────
-function extractCodeBlocks(text) {
-  const blocks = [];
-  let idx = 0;
-  const stripped = text.replace(/```[\s\S]*?```/g, (match) => {
-    const placeholder = `__CODE_BLOCK_${idx++}__`;
-    blocks.push({ placeholder, code: match });
-    return placeholder;
-  });
-  return { stripped, blocks };
-}
-
-function restoreCodeBlocks(text, blocks) {
-  let result = text;
-  for (const { placeholder, code } of blocks) {
-    result = result.replace(placeholder, code);
-  }
-  return result;
-}
-
-// ── Single-message compressor ─────────────────────────────────────────────────
-async function compressMessage(message) {
-  const { content, type } = message;
-  if (!content || content.length < 120) return { ...message, compressed: false };
-
-  const { stripped, blocks } = extractCodeBlocks(content);
-  const proseOnly = stripped.replace(/__CODE_BLOCK_\d+__/g, "").trim();
-  if (!proseOnly) return { ...message, compressed: false };
-
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      { action: "compressMessage", type, content: stripped },
-      (response) => {
-        if (chrome.runtime.lastError || !response?.ok || !response?.compressed) {
-          resolve({ ...message, compressed: false });
-          return;
-        }
-        const compressedContent = restoreCodeBlocks(response.compressed, blocks);
-        resolve({ ...message, content: compressedContent, compressed: true });
-      }
-    );
-  });
-}
-
-// ── Conversation compressor ───────────────────────────────────────────────────
-async function compressConversation(messages) {
-  const userMessages = messages.filter((m) => m.type === "user").slice(-5);
-  const assistantMessages = messages.filter((m) => m.type === "assistant").slice(-5);
-
-  const keptUserSet = new Set(userMessages.map((m) => m.timestamp + m.content.slice(0, 40)));
-  const keptAssistantSet = new Set(assistantMessages.map((m) => m.timestamp + m.content.slice(0, 40)));
-
-  const kept = messages.filter((m) => {
-    const key = m.timestamp + m.content.slice(0, 40);
-    return m.type === "user" ? keptUserSet.has(key) : keptAssistantSet.has(key);
-  });
-
-  return await Promise.all(kept.map((msg) => compressMessage(msg)));
-}
 
 // ── Capsule ───────────────────────────────────────────────────────────────────
 const Capsule = {
@@ -170,9 +111,7 @@ async function scheduleConversationSave() {
   _debounceTimer = setTimeout(async () => {
     const rawMessages = scrapeMessages();
     if (!rawMessages.length && !_attachedKnowledge.length) return;
-    let messages;
-    try { messages = await compressConversation(rawMessages); }
-    catch { messages = rawMessages; }
+    let messages = rawMessages;
     
     const capsule = Capsule.build(messages, window.location.href);
     capsule.attached_knowledge = _attachedKnowledge;
