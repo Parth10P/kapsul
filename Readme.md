@@ -1,4 +1,4 @@
-# <img src="icons/icon48.png" width="32" height="32" alt="Logo" valign="middle"> KAPSUL
+# <picture><source media="(prefers-color-scheme: dark)" srcset="icons/icon48_white.png"><source media="(prefers-color-scheme: light)" srcset="icons/icon48.png"><img alt="Logo" src="icons/icon48.png" width="32" height="32" valign="middle"></picture> KAPSUL
 
 
 ![Chrome Extension](https://img.shields.io/badge/Platform-Chrome%20Extension-blue)
