@@ -38,8 +38,9 @@
       <button id="clear-search" class="clear-search" title="Clear">✕</button>
     </div>
 
-    <!-- Stats bar -->
-    <div class="stats-bar">
+    <!-- Filters + stats -->
+    <div class="filter-bar">
+      <div id="filter-chips" class="filter-chips" role="tablist" aria-label="Filter by AI"></div>
       <span id="conv-count" class="stat">0 conversations</span>
     </div>
 
@@ -52,28 +53,31 @@
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
           </svg>
         </div>
-        <p class="empty-title">No conversations here</p>
-        <p class="empty-hint">Open any AI conversation — it will appear automatically. Exported conversations from other AIs also appear here.</p>
+        <p class="empty-title" id="empty-title">No conversations yet</p>
+        <p class="empty-hint">Open a chat on Claude, ChatGPT, Gemini or DeepSeek. Every message you send and every reply is saved automatically, one entry per chat.</p>
       </div>
     </div>
 
     <!-- Footer -->
     <footer class="footer">
-      <button id="export-btn" class="btn btn-ghost" title="Export all as JSON">
-        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
-          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/>
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        </svg>
-        Export all
-      </button>
-      <button id="clear-all-btn" class="btn btn-danger" title="Delete all">
+      <div class="footer-left">
+        <button id="export-btn" class="btn btn-ghost" title="Download every saved chat as one JSON file">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          </svg>
+          Export all
+        </button>
+        <button id="export-md-btn" class="btn btn-ghost" title="Download every saved chat as one Markdown file">.md</button>
+      </div>
+      <button id="clear-all-btn" class="btn btn-danger" title="Delete all saved chats">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
           fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="3 6 5 6 21 6"/>
           <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
         </svg>
-        Clear all
+        <span id="clear-label">Clear all</span>
       </button>
     </footer>
 
@@ -82,6 +86,7 @@
   </div>
 
   <script src="../lib/theme.js"></script>
+  <script src="../lib/kapsul-core.js"></script>
   <script src="popup.js"></script>
 </body>
 

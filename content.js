@@ -1,124 +1,120 @@
 // content.js — DOM Scraper + Send-to-AI button for Claude.ai
 
 
-// ── Capsule ───────────────────────────────────────────────────────────────────
-const Capsule = {
-  build(messages, url) {
-    const title = this._inferTitle(messages, url);
-    return {
-      id: `conv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      title, url, messages,
-      savedAt: new Date().toISOString(),
-      source: "claude",
-      version: 1,
-    };
-  },
-  _inferTitle(messages, url) {
-    const firstUser = messages.find((m) => m.type === "user");
-    if (firstUser && firstUser.content.length > 0) {
-      return firstUser.content.substring(0, 60).replace(/\n/g, " ").trim() +
-        (firstUser.content.length > 60 ? "…" : "");
-    }
-    try {
-      const u = new URL(url);
-      const parts = u.pathname.split("/").filter(Boolean);
-      return parts[parts.length - 1] || "Untitled Conversation";
-    } catch { return "Untitled Conversation"; }
-  },
-};
-
-// ── Storage ───────────────────────────────────────────────────────────────────
-const STORAGE_KEY = "claude_conversations";
-const MAX_CONVERSATIONS = 50;
-
-function storageGetAll() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get([STORAGE_KEY], (result) => {
-      if (chrome.runtime.lastError) { resolve([]); return; }
-      resolve(result[STORAGE_KEY] || []);
-    });
-  });
-}
-
-async function storageSave(conversation) {
-  const all = await storageGetAll();
-  const last = all[all.length - 1];
-  if (last && last.url === conversation.url && last.messages.length === conversation.messages.length) {
-    const mergedKnowledge = conversation.attached_knowledge || last.attached_knowledge || [];
-    all[all.length - 1] = { ...conversation, id: last.id, savedAt: last.savedAt, attached_knowledge: mergedKnowledge };
-  } else {
-    all.push(conversation);
-  }
-  const trimmed = all.slice(-MAX_CONVERSATIONS);
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [STORAGE_KEY]: trimmed }, () => resolve());
-  });
-}
+// ── Auto-save engine lives in lib/kapsul-core.js ─────────────────────────────
+// Every chat is stored under its own key (source + chat URL). Writes go through
+// the background worker, so chats never overwrite or mix with each other.
+let _autoSave = null;
+let _attachedKnowledge = [];
 
 // ── Scraper ───────────────────────────────────────────────────────────────────
+// Reads BOTH sides: what you sent + what Claude answered, in page order.
+// Claude changes its DOM often, so assistant replies are found in 3 steps:
+//   1) known reply selectors  2) turn-by-turn structural fallback
+const USER_SEL = '[data-testid="user-message"]';
+const AI_SEL = [
+  ".font-claude-response",
+  ".font-claude-message",
+  '[data-testid="assistant-message"]',
+  "[data-is-streaming]",
+].join(", ");
+
+function _cleanTurnText(turn) {
+  // everything in a turn that is not the user's own bubble or UI chrome
+  const clone = turn.cloneNode(true);
+  clone.querySelectorAll(
+    USER_SEL + ', button, form, fieldset, header, nav, [contenteditable], [role="toolbar"], [data-testid*="action"], [data-testid*="feedback"]'
+  ).forEach((n) => n.remove());
+  return Kapsul.elementToText(clone);
+}
+
+function _structuralScrape(users) {
+  // climb until we reach the element whose children are the conversation "turns"
+  let list = users[0].parentElement;
+  for (let i = 0; i < 8 && list && list.parentElement; i++) {
+    const hasReply = [...list.children].some(
+      (k) => !k.matches(USER_SEL) && !k.querySelector(USER_SEL) && _cleanTurnText(k).length > 0);
+    if (hasReply && users.every((u) => list.contains(u))) break;
+    list = list.parentElement;
+  }
+  if (!list || list.matches("body, html") || list.querySelector('[contenteditable], fieldset')) {
+    // too broad (reached composer/layout): use user bubbles + their following siblings only
+    const out = [];
+    for (const u of users) {
+      out.push({ el: u, type: "user" });
+      let n = u.closest("[data-test-render-count]") || u;
+      while (n.parentElement && !n.nextElementSibling && n.parentElement !== document.body) n = n.parentElement;
+      const sib = n.nextElementSibling;
+      if (sib && !sib.querySelector(USER_SEL) && !sib.querySelector("[contenteditable]")) out.push({ el: sib, type: "assistant" });
+    }
+    return out;
+  }
+  const out = [];
+  for (const kid of list.children) {
+    if (kid.querySelector(USER_SEL) || kid.matches(USER_SEL)) {
+      out.push({ el: kid.querySelector(USER_SEL) || kid, type: "user" });
+      out.push({ el: kid, type: "assistant", stripUser: true });
+    } else if (kid.textContent.trim()) {
+      out.push({ el: kid, type: "assistant" });
+    }
+  }
+  return out;
+}
+
 function scrapeMessages() {
-  let messages = [];
+  const messages = [];
   const now = new Date().toISOString();
+  const push = (type, content) => {
+    if (content) messages.push({ type, content, format: "text", timestamp: now });
+  };
 
-  document.querySelectorAll('[data-testid="user-message"], .font-claude-response')
-    .forEach((el) => {
-      const isUser = el.matches('[data-testid="user-message"]');
-      const type = isUser ? "user" : "assistant";
+  const users = [...document.querySelectorAll(USER_SEL)];
+  const aiRaw = [...document.querySelectorAll(AI_SEL)]
+    .filter((el) => !el.querySelector(USER_SEL) && !el.matches(USER_SEL));
+  const ai = aiRaw.filter((el) => !aiRaw.some((o) => o !== el && o.contains(el))); // outermost only
 
-      if (isUser) {
-        const content = el.innerText?.trim();
-        if (content) messages.push({ type, content, format: "text", timestamp: now });
-      } else {
-        const parts = [];
-        el.querySelectorAll('p, li, h1, h2, h3, pre.code-block__code, [role="group"] pre.code-block__code')
-          .forEach((child) => {
-            if (child.tagName === "PRE" && child.classList.contains("code-block__code")) {
-              const code = child.querySelector("code");
-              const lang = child.closest('[role="group"]')?.querySelector(".text-text-500")?.innerText?.trim() || "";
-              const c = code?.innerText?.trim() || child.innerText?.trim();
-              if (c) parts.push(`\`\`\`${lang}\n${c}\n\`\`\``);
-            } else {
-              const text = child.innerText?.trim();
-              if (text) parts.push(text);
-            }
-          });
-        if (parts.length) messages.push({ type, content: parts.join("\n\n"), format: "text", timestamp: now });
-      }
-    });
+  let strategy = "selectors";
+  if (ai.length) {
+    const all = [...users.map((el) => ({ el, type: "user" })), ...ai.map((el) => ({ el, type: "assistant" }))]
+      .sort((x, y) => (x.el.compareDocumentPosition(y.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+    for (const { el, type } of all) {
+      push(type, type === "user" ? el.innerText?.trim() : Kapsul.elementToText(el));
+    }
+  } else if (users.length) {
+    strategy = "structural";
+    for (const item of _structuralScrape(users)) {
+      if (item.type === "user") push("user", item.el.innerText?.trim());
+      else push("assistant", item.stripUser ? _cleanTurnText(item.el) : Kapsul.elementToText(item.el));
+    }
+  }
 
+  // visible in DevTools console (F12) on claude.ai to see what was captured
+  const nu = messages.filter((m) => m.type === "user").length;
+  const sig = `${strategy}:${nu}:${messages.length - nu}`;
+  if (window.__kapsulLastScrape !== sig) {
+    window.__kapsulLastScrape = sig;
+    console.log(`[Kapsul] captured ${nu} user + ${messages.length - nu} Claude messages (${strategy})`);
+  }
   return messages;
 }
 
-// ── Debounced save ────────────────────────────────────────────────────────────
-let _debounceTimer = null;
-let _attachedKnowledge = [];
-
-async function restoreAttachedKnowledge() {
-  try {
-    const all = await storageGetAll();
-    const current = all.find(c => c.url === window.location.href);
-    if (current?.attached_knowledge) {
-      _attachedKnowledge = current.attached_knowledge;
-      console.log(`[Kapsul] Restored ${_attachedKnowledge.length} attached knowledge document(s) from storage.`);
-    }
-  } catch (err) {
-    console.error("[Kapsul] Failed to restore attached knowledge:", err);
-  }
+// Live snapshot of the chat that is on screen right now (never from storage)
+function buildLiveEntry() {
+  const messages = scrapeMessages();
+  return {
+    id: Kapsul.convId("claude", location.href),
+    source: "claude",
+    url: location.href,
+    title: Kapsul.pageTitle() || Kapsul.inferTitle(messages),
+    project: Kapsul.detectProject("claude"),
+    messages,
+    attached_knowledge: _attachedKnowledge,
+    savedAt: new Date().toISOString(),
+    version: 2,
+  };
 }
 
-async function scheduleConversationSave() {
-  clearTimeout(_debounceTimer);
-  _debounceTimer = setTimeout(async () => {
-    const rawMessages = scrapeMessages();
-    if (!rawMessages.length && !_attachedKnowledge.length) return;
-    let messages = rawMessages;
-    
-    const capsule = Capsule.build(messages, window.location.href);
-    capsule.attached_knowledge = _attachedKnowledge;
-    try { await storageSave(capsule); }
-    catch (err) { console.error("[ContextClaw] save failed:", err); }
-  }, 1500);
-}
+function scheduleConversationSave(delay) { _autoSave?.schedule(delay); }
 
 // ── File Interception ─────────────────────────────────────────────────────────
 async function handleInterceptedPDF(file) {
@@ -138,7 +134,7 @@ async function handleInterceptedPDF(file) {
     
     _attachedKnowledge = _attachedKnowledge.filter(doc => doc.name !== file.name);
     _attachedKnowledge.push(docObj);
-    scheduleConversationSave();
+    scheduleConversationSave(300);
     showToast(`✓ PDF extracted & saved`);
   } catch (err) {
     console.error("PDF extraction failed:", err);
@@ -211,57 +207,28 @@ function formatContextBlock(conversation) {
 
 // ── Copy current chat to clipboard ──────────────────────────────────────────
 function copyCurrentChat() {
-  const messages = scrapeMessages();
-  if (!messages.length && !_attachedKnowledge.length) { showToast("No messages found to copy."); return; }
-  const firstUser = messages.find(m => m.type === "user");
-  const title = firstUser?.content?.slice(0, 60) || "conversation";
-  const lines = [
-    `[Claude conversation: "${title}"]`,
-    `[Copied: ${new Date().toLocaleString()}]`,
-    "",
-  ];
-
-  if (_attachedKnowledge && _attachedKnowledge.length > 0) {
-    lines.push(`--- Attached Documents ---`);
-    for (const doc of _attachedKnowledge) {
-      lines.push(`Here is the attached document context (${doc.name}):`, ``, doc.content, ``);
-    }
-    lines.push(`--- End of Attached Documents ---`, ``);
-  }
-
-  for (const msg of messages) {
-    lines.push(`${msg.type === "user" ? "User" : "Claude"}: ${msg.content}`, "");
-  }
-  navigator.clipboard.writeText(lines.join("\n")).then(
+  const conv = buildLiveEntry();
+  if (!conv.messages.length && !conv.attached_knowledge.length) { showToast("No messages found to copy."); return; }
+  navigator.clipboard.writeText(Kapsul.toPlainText(conv)).then(
     () => showToast("✓ Conversation copied to clipboard"),
     () => showToast("⚠️ Copy failed — try again.")
   );
 }
 
-// ── Download current chat as JSON ──────────────────────────────────────────────
-function downloadCurrentChat() {
-  const messages = scrapeMessages();
-  if (!messages.length && !_attachedKnowledge.length) { showToast("No messages found to download."); return; }
-  const capsule = Capsule.build(messages, window.location.href);
-  capsule.attached_knowledge = _attachedKnowledge;
-  const blob = new Blob([JSON.stringify(capsule, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${capsule.title.replace(/[^\w\d]+/g, "_").slice(0, 50)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-  showToast("✓ Downloading JSON…");
+// ── Download current chat (JSON or Markdown) ─────────────────────────────────
+function downloadCurrentChat(format = "json") {
+  const conv = buildLiveEntry();
+  if (!conv.messages.length && !conv.attached_knowledge.length) { showToast("No messages found to download."); return; }
+  const name = Kapsul.safeName(conv.title);
+  if (format === "md") Kapsul.download(`${name}.md`, Kapsul.toMarkdown(conv), "text/markdown");
+  else Kapsul.download(`${name}.json`, JSON.stringify(conv, null, 2), "application/json");
+  showToast(format === "md" ? "✓ Downloading Markdown…" : "✓ Downloading JSON…");
 }
 
 // ── Send to AI ────────────────────────────────────────────────────────────────
+// Uses the chat that is open RIGHT NOW (not "the last saved one").
 async function sendToAI(target) {
-  const all = await storageGetAll();
-  if (!all.length) { showToast("⚠️ No saved conversations. Click Refresh in the popup first."); return; }
-
-  const conversation = all.slice().reverse().find(c => c.url === window.location.href) || all[all.length - 1];
+  const conversation = buildLiveEntry();
   const ctx = formatContextBlock(conversation);
   if (!ctx) { showToast("No messages to send."); return; }
 
@@ -545,16 +512,28 @@ function buildPanel() {
       <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/>
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
     </svg>
-    Download
+    JSON
   `;
   dlBtn.addEventListener("mousedown", (e) => {
     e.preventDefault();
     closePanel();
-    downloadCurrentChat();
+    downloadCurrentChat("json");
+  });
+
+  const mdBtn = document.createElement("button");
+  mdBtn.className = "cc-action-btn";
+  mdBtn.type = "button";
+  mdBtn.title = "Download conversation as Markdown";
+  mdBtn.textContent = "MD";
+  mdBtn.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    closePanel();
+    downloadCurrentChat("md");
   });
 
   actionRow.appendChild(copyBtn);
   actionRow.appendChild(dlBtn);
+  actionRow.appendChild(mdBtn);
   panel.appendChild(actionRow);
 
   document.body.appendChild(panel);
@@ -567,7 +546,7 @@ let _panelOpen = false;
 function openPanel(btn) {
   if (!_panel) _panel = buildPanel();
   const r = btn.getBoundingClientRect();
-  const panelH = 185;
+  const panelH = 215;
   if (r.top > panelH + 10) {
     _panel.style.bottom = `${window.innerHeight - r.top + 8}px`;
     _panel.style.top = "auto";
@@ -612,49 +591,26 @@ function injectButton() {
     e.stopPropagation();
     _panelOpen ? closePanel() : openPanel(btn);
   });
-  document.addEventListener("click", (e) => {
-    if (_panelOpen && !_panel?.contains(e.target) && e.target !== btn) closePanel();
-  });
 
   slot.appendChild(btn);
 }
 
+// registered once (was added on every re-injection before)
+document.addEventListener("click", (e) => {
+  const btn = document.getElementById(CC_BTN_ID);
+  if (_panelOpen && !_panel?.contains(e.target) && !btn?.contains(e.target)) closePanel();
+});
+
 // ── Message listener ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.action === "scrapeNow") { scheduleConversationSave(); sendResponse({ ok: true }); }
+  if (message.action === "scrapeNow") {
+    // popup asked: save the open chat NOW, answer when it is really stored
+    (_autoSave ? _autoSave.flush() : Promise.resolve({ ok: false })).then(sendResponse);
+    return true;
+  }
   if (message.action === "ping") { sendResponse({ ok: true, url: window.location.href }); }
   return false;
 });
-
-// ── MutationObserver ──────────────────────────────────────────────────────────
-let _observer = null;
-
-function startObserver() {
-  if (_observer) return;
-  _observer = new MutationObserver((mutations) => {
-    if (mutations.some((m) => m.addedNodes.length > 0 || m.type === "characterData")) {
-      scheduleConversationSave();
-      if (!document.getElementById(CC_BTN_ID)) setTimeout(injectButton, 300);
-    }
-  });
-  _observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-}
-
-// ── Init ──────────────────────────────────────────────────────────────────────
-function isConversationPage() {
-  return (
-    /\/chat\/|\/c\/|\/conversation/.test(window.location.pathname) ||
-    /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.test(window.location.pathname)
-  );
-}
-
-let _injectAttempts = 0;
-function retryInject() {
-  if (document.getElementById(CC_BTN_ID)) return;
-  if (_injectAttempts++ > 30) return;
-  injectButton();
-  if (!document.getElementById(CC_BTN_ID)) setTimeout(retryInject, 400);
-}
 
 // ── Pending context injection (receive context from other AIs) ────────────────
 function checkAndInjectPendingContext() {
@@ -688,31 +644,53 @@ function checkAndInjectPendingContext() {
       }, 500);
     });
   } catch (e) {
-    // chrome.storage.session may not be available in all contexts — silently fail
+    // silently fail
   }
 }
 
-async function init() {
-  checkAndInjectPendingContext();
-  setupFileInterception();
-  await restoreAttachedKnowledge();
+// ── Keep the Export button alive (React re-renders drop it) ───────────────────
+let _injectAttempts = 0;
+function retryInject() {
+  if (document.getElementById(CC_BTN_ID)) return;
+  if (_injectAttempts++ > 30) return;
+  injectButton();
+  if (!document.getElementById(CC_BTN_ID)) setTimeout(retryInject, 400);
+}
 
-  // Always try to inject the Export button (homepage or conversation)
+let _btnTimer = null;
+function watchButton() {
+  new MutationObserver(() => {
+    if (_btnTimer || document.getElementById(CC_BTN_ID)) return;
+    _btnTimer = setTimeout(() => { _btnTimer = null; injectButton(); }, 300);
+  }).observe(document.body, { childList: true, subtree: true });
+}
+
+function resetButton() {
+  document.getElementById(CC_BTN_ID)?.remove();
+  document.getElementById(CC_PANEL_ID)?.remove();
+  _panel = null; _panelOpen = false;
   _injectAttempts = 0;
   retryInject();
+}
 
-  if (!isConversationPage()) {
-    let last = window.location.href;
-    const poll = setInterval(() => {
-      if (window.location.href !== last) {
-        last = window.location.href;
-        if (isConversationPage()) { clearInterval(poll); startObserver(); scheduleConversationSave(); _injectAttempts = 0; retryInject(); }
-      }
-    }, 800);
-    return;
-  }
-  startObserver();
-  scheduleConversationSave();
+// ── Init (runs ONCE; chat switches are handled inside the auto-save engine) ───
+function init() {
+  if (window.__kapsulInit) return;
+  window.__kapsulInit = true;
+
+  checkAndInjectPendingContext();
+  setupFileInterception();
+
+  _autoSave = Kapsul.startAutoSave({
+    source: "claude",
+    scrape: scrapeMessages,
+    getAttached: () => _attachedKnowledge,
+    setAttached: (arr) => { _attachedKnowledge = arr || []; },
+    onNavigate: resetButton,
+  });
+
+  retryInject();
+  watchButton();
 }
 
 if (document.readyState === "loading") {
@@ -720,20 +698,5 @@ if (document.readyState === "loading") {
 } else {
   init();
 }
-
-// SPA nav
-let _lastHref = window.location.href;
-const _navObserver = new MutationObserver(() => {
-  if (window.location.href !== _lastHref) {
-    _lastHref = window.location.href;
-    if (_observer) { _observer.disconnect(); _observer = null; }
-    document.getElementById(CC_BTN_ID)?.remove();
-    document.getElementById(CC_PANEL_ID)?.remove();
-    _panel = null; _panelOpen = false;
-_attachedKnowledge = [];
-    init();
-  }
-});
-_navObserver.observe(document.documentElement, { childList: true, subtree: false });
 
 window.__contextClaw = { scrapeNow: scheduleConversationSave, scrapeMessages };

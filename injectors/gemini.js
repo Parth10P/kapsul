@@ -8,21 +8,6 @@ const CC_STORAGE_KEY = "claude_conversations";
 
 let _attachedKnowledge = [];
 
-async function restoreAttachedKnowledge() {
-  try {
-    const res = await chrome.storage.local.get([CC_STORAGE_KEY]);
-    const all = res[CC_STORAGE_KEY] || [];
-    const convId = `gemini_${window.location.href}`;
-    const current = all.find(c => c.id === convId);
-    if (current?.attached_knowledge) {
-      _attachedKnowledge = current.attached_knowledge;
-      console.log(`[Kapsul] Restored ${_attachedKnowledge.length} attached knowledge document(s) on Gemini.`);
-    }
-  } catch (err) {
-    console.error("[Kapsul] Failed to restore documents:", err);
-  }
-}
-
 async function handleInterceptedPDF(file) {
   try {
     showBanner(`Extracting text from ${file.name}…`);
@@ -749,29 +734,9 @@ function retryInjectButton() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function scrapeAndSave() {
-  const messages = scrapeCurrentConversation();
-  if (!messages.length && !_attachedKnowledge.length) return Promise.resolve({ ok: false, reason: "no messages" });
-
-  const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "Gemini conversation";
-  const convId = `gemini_${window.location.href}`;
-
-  return new Promise((resolve) => {
-    chrome.storage.local.get([CC_STORAGE_KEY], (res) => {
-      const all = res[CC_STORAGE_KEY] || [];
-      const idx = all.findIndex(c => c.id === convId);
-      const entry = {
-        id: convId, title, url: window.location.href,
-        messages, attached_knowledge: _attachedKnowledge,
-        savedAt: new Date().toISOString(),
-        source: "gemini", version: 1,
-      };
-      if (idx >= 0) all[idx] = entry; else all.unshift(entry);
-      chrome.storage.local.set({ [CC_STORAGE_KEY]: all }, () => resolve({ ok: true }));
-    });
-  });
+  return globalThis.__kapsulAuto ? globalThis.__kapsulAuto.flush() : Promise.resolve({ ok: false, reason: "not ready" });
 }
 
-// Listen for popup's scrapeNow request
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.action === "scrapeNow") {
     scrapeAndSave().then(sendResponse);
@@ -785,7 +750,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 async function init() {
   setupFileInterception();
-  await restoreAttachedKnowledge();
+  Kapsul.startAutoSave({
+    source: "gemini",
+    scrape: scrapeCurrentConversation,
+    getAttached: () => _attachedKnowledge,
+    setAttached: (arr) => { _attachedKnowledge = arr || []; },
+  });
 
   // Triple-fire to cover Angular's delayed hydration (0ms, 1.5s, 3s)
   tryInjectContext();

@@ -7,21 +7,6 @@ const CC_STORAGE_KEY = "claude_conversations";
 
 let _attachedKnowledge = [];
 
-async function restoreAttachedKnowledge() {
-  try {
-    const res = await chrome.storage.local.get([CC_STORAGE_KEY]);
-    const all = res[CC_STORAGE_KEY] || [];
-    const convId = `chatgpt_${window.location.href}`;
-    const current = all.find(c => c.id === convId);
-    if (current?.attached_knowledge) {
-      _attachedKnowledge = current.attached_knowledge;
-      console.log(`[Kapsul] Restored ${_attachedKnowledge.length} attached knowledge document(s) on ChatGPT.`);
-    }
-  } catch (err) {
-    console.error("[Kapsul] Failed to restore documents:", err);
-  }
-}
-
 async function handleInterceptedPDF(file) {
   try {
     showBanner(`Extracting text from ${file.name}…`);
@@ -167,7 +152,9 @@ function scrapeCurrentConversation() {
     const role = el.getAttribute("data-message-author-role");
     const type = role === "user" ? "user" : "assistant";
     const contentEl = el.querySelector(".whitespace-pre-wrap, .markdown, [data-message-content]");
-    const content = (contentEl || el).innerText?.trim();
+    const content = (type === "assistant" && contentEl
+      ? Kapsul.elementToText(contentEl)
+      : (contentEl || el).innerText?.trim()) || (contentEl || el).innerText?.trim();
     if (content) messages.push({ type, content, format: "text", timestamp: now });
   });
 
@@ -614,24 +601,7 @@ function retryInjectButton() {
 // BLOCK E — Auto-save for popup display
 
 function scrapeAndSave() {
-  const messages = scrapeCurrentConversation();
-  if (!messages.length) return Promise.resolve({ ok: false, reason: "no messages" });
-  const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "ChatGPT conversation";
-  const convId = `chatgpt_${window.location.href}`;
-  return new Promise((resolve) => {
-    chrome.storage.local.get([CC_STORAGE_KEY], (res) => {
-      const all = res[CC_STORAGE_KEY] || [];
-      const idx = all.findIndex(c => c.id === convId);
-      const entry = {
-        id: convId, title, url: window.location.href,
-        messages, attached_knowledge: _attachedKnowledge,
-        savedAt: new Date().toISOString(),
-        source: "chatgpt", version: 1,
-      };
-      if (idx >= 0) all[idx] = entry; else all.unshift(entry);
-      chrome.storage.local.set({ [CC_STORAGE_KEY]: all }, () => resolve({ ok: true }));
-    });
-  });
+  return globalThis.__kapsulAuto ? globalThis.__kapsulAuto.flush() : Promise.resolve({ ok: false, reason: "not ready" });
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -644,7 +614,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // BLOCK F — Entry point
 async function init() {
   setupFileInterception();
-  await restoreAttachedKnowledge();
+  Kapsul.startAutoSave({
+    source: "chatgpt",
+    scrape: scrapeCurrentConversation,
+    getAttached: () => _attachedKnowledge,
+    setAttached: (arr) => { _attachedKnowledge = arr || []; },
+  });
   tryInjectContext();
   retryInjectButton();
 }

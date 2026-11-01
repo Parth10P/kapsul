@@ -7,21 +7,6 @@ const CC_STORAGE_KEY = "claude_conversations";
 
 let _attachedKnowledge = [];
 
-async function restoreAttachedKnowledge() {
-  try {
-    const res = await chrome.storage.local.get([CC_STORAGE_KEY]);
-    const all = res[CC_STORAGE_KEY] || [];
-    const convId = `deepseek_${window.location.href}`;
-    const current = all.find(c => c.id === convId);
-    if (current?.attached_knowledge) {
-      _attachedKnowledge = current.attached_knowledge;
-      console.log(`[Kapsul] Restored ${_attachedKnowledge.length} attached knowledge document(s) on DeepSeek.`);
-    }
-  } catch (err) {
-    console.error("[Kapsul] Failed to restore documents:", err);
-  }
-}
-
 async function handleInterceptedPDF(file) {
   try {
     showBanner(`Extracting text from ${file.name}…`);
@@ -172,7 +157,13 @@ function scrapeCurrentConversation() {
     return messages;
   }
 
-  allMessages.forEach(el => {
+  // drop nested duplicates (wrapper + inner markdown), but only within the same side
+  const isUserEl = (el) => el.classList.contains("fbb737a4") ||
+    el.closest("[class*='user']") !== null || el.querySelector("textarea") !== null;
+  const matched = [...allMessages];
+  const outer = matched.filter(el => !matched.some(o => o !== el && o.contains(el) && isUserEl(o) === isUserEl(el)));
+
+  outer.forEach(el => {
     const isUser = el.classList.contains("fbb737a4") ||
       el.closest("[class*='user']") !== null ||
       el.querySelector("textarea") !== null;
@@ -667,24 +658,7 @@ function retryInjectButton() {
 // BLOCK E — Auto-save for popup display
 
 function scrapeAndSave() {
-  const messages = scrapeCurrentConversation();
-  if (!messages.length && !_attachedKnowledge.length) return Promise.resolve({ ok: false, reason: "no messages" });
-  const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "DeepSeek conversation";
-  const convId = `deepseek_${window.location.href}`;
-  return new Promise((resolve) => {
-    chrome.storage.local.get([CC_STORAGE_KEY], (res) => {
-      const all = res[CC_STORAGE_KEY] || [];
-      const idx = all.findIndex(c => c.id === convId);
-      const entry = {
-        id: convId, title, url: window.location.href,
-        messages, attached_knowledge: _attachedKnowledge,
-        savedAt: new Date().toISOString(),
-        source: "deepseek", version: 1,
-      };
-      if (idx >= 0) all[idx] = entry; else all.unshift(entry);
-      chrome.storage.local.set({ [CC_STORAGE_KEY]: all }, () => resolve({ ok: true }));
-    });
-  });
+  return globalThis.__kapsulAuto ? globalThis.__kapsulAuto.flush() : Promise.resolve({ ok: false, reason: "not ready" });
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -697,7 +671,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // BLOCK F — Entry point
 async function init() {
   setupFileInterception();
-  await restoreAttachedKnowledge();
+  Kapsul.startAutoSave({
+    source: "deepseek",
+    scrape: scrapeCurrentConversation,
+    getAttached: () => _attachedKnowledge,
+    setAttached: (arr) => { _attachedKnowledge = arr || []; },
+  });
   tryInjectContext();
   retryInjectButton();
 }

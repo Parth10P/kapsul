@@ -570,3 +570,141 @@ body {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* ═══ v1.3 additions ═══════════════════════════════════════════════════════════ */
+
+/* ── Filter bar ──────────────────────────────────────────────────────────────── */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.filter-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.chip {
+  background: transparent;
+  border: 1px solid var(--border-2);
+  color: var(--text-3);
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 99px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.chip:hover {
+  color: var(--text-2);
+  border-color: var(--border-3);
+}
+
+.chip.active {
+  background: var(--surface-4);
+  color: var(--text);
+  border-color: var(--border-3);
+}
+
+.filter-bar .stat {
+  flex-shrink: 0;
+}
+
+/* ── Current chat highlight ──────────────────────────────────────────────────── */
+.conv-card.is-active {
+  border-color: rgba(200, 169, 122, 0.45);
+  box-shadow: 0 0 0 1px rgba(200, 169, 122, 0.12);
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.7);
+  flex-shrink: 0;
+}
+
+.project-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--text-2);
+  background: var(--surface-4);
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+}
+
+.snippet {
+  padding: 0 12px 8px;
+  font-size: 10px;
+  color: var(--text-3);
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Icon buttons with text ──────────────────────────────────────────────────── */
+.btn-icon-only.btn-text {
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  min-width: 24px;
+  height: 24px;
+}
+
+/* ── Messages: preserve line breaks / code, scroll inside card ───────────────── */
+.messages-panel {
+  max-height: 280px;
+}
+
+.msg-body {
+  white-space: pre-wrap;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text);
+  font-variant-ligatures: none;
+}
+
+.msg-bubble.user {
+  background: var(--surface-4);
+  border-left: 2px solid #c8a97a;
+}
+
+.msg-bubble.assistant {
+  border-left: 2px solid var(--border-3);
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────────── */
+.footer-left {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-danger.armed {
+  background: rgba(224, 82, 82, 0.16);
+  border-color: rgba(224, 82, 82, 0.6);
+  color: #ff8a8a;
+}
