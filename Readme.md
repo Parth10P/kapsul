@@ -489,3 +489,12 @@ Built with passion and frustration by developers who kept hitting AI context lim
 **Stop losing context. Start syncing it.**
 
 </div>
+
+
+### Capture reliability (1.3.1)
+
+After updating the unpacked extension, reload it in `chrome://extensions` (or `brave://extensions`) and refresh previously open AI tabs. Give Kapsul access to the supported site if browser site access is restricted. Open an individual saved chat on Claude, ChatGPT, Gemini or DeepSeek. The popup shows capture status and offers **Capture current chat** for an explicit retry. Older chats must be opened, and virtualized history must be scrolled into view before it can be captured. Kapsul reads the rendered transcript, not private APIs, deleted messages or hidden model reasoning.
+
+Use **Use as context** on a saved conversation to open another supported AI in a new tab. Kapsul fills the new chat composer; review the context and press Send yourself. If the destination rejects insertion or the conversation exceeds its input limit, use Copy or Markdown export instead. Conversation storage remains local; the handoff is scoped to the chosen tab and kept in browser session storage until inserted or the tab closes.
+
+Regression tests: `node --test tests/background.test.cjs`; open `tests/capture-fixtures.html` in Chromium for the DOM fixtures. These fixtures do not replace live-provider smoke tests.

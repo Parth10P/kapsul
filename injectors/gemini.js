@@ -3,12 +3,11 @@
 //
 // Storage: chrome.storage.LOCAL (NOT .session — session is unreliable in content scripts)
 
-const PENDING_INJECT_KEY = "pending_context_inject";
-const CC_STORAGE_KEY = "claude_conversations";
 
 let _attachedKnowledge = [];
 
 async function handleInterceptedPDF(file) {
+  const originalUrl=Kapsul.normalizeUrl(location.href);
   try {
     showBanner(`Extracting text from ${file.name}…`);
     if (typeof extractMarkdownFromPDF !== 'function') {
@@ -16,6 +15,7 @@ async function handleInterceptedPDF(file) {
       return;
     }
     const markdown = await extractMarkdownFromPDF(file);
+    if (Kapsul.normalizeUrl(location.href)!==originalUrl) return;
     
     const docObj = {
       name: file.name,
@@ -60,64 +60,6 @@ function setupFileInterception() {
 // BLOCK A — Wait for Gemini's actual input field
 // ═══════════════════════════════════════════════════════════════════════════════
 
-async function waitForGeminiInput(maxRetries = 60) {
-  for (let i = 0; i < maxRetries; i++) {
-    const el = findGeminiInput();
-    if (el) {
-      console.log("[CC] 🎯 Gemini input found:", el.tagName, el.className);
-      return el;
-    }
-    await new Promise(r => setTimeout(r, 300));
-  }
-  return null;
-}
-
-function findGeminiInput() {
-  // PRIMARY (confirmed from live DOM):
-  // <rich-textarea class="ql-container ql-bubble">
-  //   <div class="ql-editor ql-blank textarea new-input-ui" contenteditable="true" role="textbox" aria-label="Enter a prompt for Gemini">
-  // IMPORTANT: .ql-clipboard is ALSO contenteditable inside rich-textarea — must exclude it
-  const ql = document.querySelector(
-    "rich-textarea .ql-editor[contenteditable='true']:not(.ql-clipboard)"
-  );
-  if (ql && ql.offsetParent !== null) return ql;
-
-  // FALLBACK 1: aria-label confirmed from live DOM
-  const byLabel = document.querySelector(
-    '[contenteditable="true"][aria-label="Enter a prompt for Gemini"],' +
-    '[contenteditable="true"][aria-label*="prompt for Gemini" i]'
-  );
-  if (byLabel && byLabel.offsetParent !== null) return byLabel;
-
-  // FALLBACK 2: role=textbox + aria-multiline (Gemini-specific attributes)
-  const byRole = document.querySelector(
-    '[contenteditable="true"][role="textbox"][aria-multiline="true"]'
-  );
-  if (byRole && byRole.offsetParent !== null) return byRole;
-
-  // FALLBACK 3: any .ql-editor contenteditable visible on screen
-  const allQl = document.querySelectorAll('.ql-editor[contenteditable="true"]');
-  for (const el of allQl) {
-    if (el.offsetParent !== null) return el;
-  }
-
-  // FALLBACK 4: large visible contenteditable in lower viewport half (last resort)
-  const allCe = document.querySelectorAll('[contenteditable="true"]:not(.ql-clipboard)');
-  for (const el of allCe) {
-    const rect = el.getBoundingClientRect();
-    if (rect.width > 200 && rect.bottom > window.innerHeight * 0.4 && el.offsetParent !== null) {
-      return el;
-    }
-  }
-
-  return null;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// BLOCK B — Correct injection for Quill / contenteditable
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// ── Most reliable injection for Quill contenteditable
 function injectIntoGemini(el, text) {
   // 1. Focus
   el.click();
@@ -161,146 +103,15 @@ function injectIntoGemini(el, text) {
 }
 
 
-// ── Check if Quill field is still empty
-function isQuillEmpty(el) {
-  const t = (el.innerText || "").trim();
-  return !t || el.innerHTML === "<p><br></p>";
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// BLOCK C — Pending context handler (reads from chrome.storage.LOCAL)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-async function submitGeminiInput() {
-  for (let i = 0; i < 20; i++) {
-    const btn = document.querySelector(
-      'button[aria-label="Send message"]:not([aria-disabled="true"]):not([disabled])'
-    );
-    if (btn) {
-      console.log("[CC] 🚀 Clicking Send button");
-      btn.click();
-      return true;
-    }
-    await new Promise(r => setTimeout(r, 200));
-  }
-  const inp = findGeminiInput();
-  if (inp) {
-    console.warn("[CC] Send btn not enabled — trying Enter key");
-    inp.focus();
-    inp.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "Enter", code: "Enter", keyCode: 13,
-      bubbles: true, cancelable: true, composed: true,
-    }));
-    return true;
-  }
-  return false;
-}
-
 async function tryInjectContext() {
-  let pending;
-  try {
-    const result = await chrome.storage.local.get([PENDING_INJECT_KEY]);
-    pending = result[PENDING_INJECT_KEY];
-  } catch (e) {
-    console.warn("[CC] storage error:", e.message);
-    return;
-  }
-
-  console.log("[CC] storage →", pending
-    ? `target=${pending.target}, age=${Math.round((Date.now() - pending.ts) / 1000)}s, len=${pending.context?.length}`
-    : "no pending data"
-  );
-
-  if (!pending) return;
-  if (pending.target !== "gemini") { return; }
-  if (Date.now() - pending.ts > 60000) {
-    return;
-  }
-
-  const input = await waitForGeminiInput();
-  if (!input) {
-    showBanner("Could not find Gemini input field.", true);
-    return;
-  }
-  console.log("[CC] ✅ Input found");
-
-  try { await chrome.storage.local.remove([PENDING_INJECT_KEY]); } catch (_) { }
-
-  injectIntoGemini(input, pending.context);
-  await new Promise(r => setTimeout(r, 600));
-
-  showBanner("Sending context to Gemini…");
-  const submitted = await submitGeminiInput();
-  if (!submitted) {
-    showBanner("Injected — please press Send manually.", true);
-  }
+  return Kapsul.receiveContext("gemini", () => [...document.querySelectorAll('rich-textarea .ql-editor[contenteditable="true"]:not(.ql-clipboard), [contenteditable="true"][aria-label*="prompt for Gemini" i]')].find(el => el.offsetParent !== null), injectIntoGemini, showBanner);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BLOCK D — Gemini conversation scraper
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function scrapeCurrentConversation() {
-  const messages = [];
-  const now = new Date().toISOString();
-
-  // ── PRIMARY (confirmed from live DOM) ────────────────────────────────────────
-  // User turns:  <user-query-content> → .query-text → .query-text-line (p tags)
-  // Model turns: <model-response> → message-content → .markdown.markdown-main-panel
-
-  const userEls = document.querySelectorAll("user-query-content");
-  const modelEls = document.querySelectorAll("model-response");
-
-  if (userEls.length > 0 || modelEls.length > 0) {
-    const all = [
-      ...[...userEls].map(el => ({ el, type: "user" })),
-      ...[...modelEls].map(el => ({ el, type: "assistant" })),
-    ].sort((a, b) =>
-      a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
-    );
-
-    for (const { el, type } of all) {
-      let text;
-      if (type === "user") {
-        // Confirmed: .query-text > .query-text-line (one <p> per line)
-        const queryTextEl = el.querySelector(".query-text");
-        text = queryTextEl
-          ? [...queryTextEl.querySelectorAll(".query-text-line")]
-            .map(p => p.innerText?.trim())
-            .filter(Boolean)
-            .join("\n") || queryTextEl.innerText?.trim()
-          : el.querySelector(".user-query-bubble-with-background")?.innerText?.trim()
-          || el.innerText?.trim();
-      } else {
-        // Confirmed: message-content .markdown.markdown-main-panel
-        const markdownEl =
-          el.querySelector("message-content .markdown") ||
-          el.querySelector(".markdown") ||
-          el.querySelector("message-content");
-        // Strip buttons/icons from the clone before reading text
-        if (markdownEl) {
-          const clone = markdownEl.cloneNode(true);
-          clone.querySelectorAll("button, svg, [aria-hidden], response-element, sources-list").forEach(n => n.remove());
-          text = clone.innerText?.trim();
-        } else {
-          const clone = el.cloneNode(true);
-          clone.querySelectorAll("button, svg, [aria-hidden], response-element, sources-list, message-actions").forEach(n => n.remove());
-          text = clone.innerText?.trim();
-        }
-      }
-      if (text) messages.push({ type, content: text, format: "text", timestamp: now });
-    }
-    return messages;
-  }
-
-  // ── FALLBACK: broad sweep ────────────────────────────────────────────────────
-  document.querySelectorAll("[data-message-author], [role='listitem']").forEach(el => {
-    const text = el.innerText?.trim();
-    if (text) messages.push({ type: "unknown", content: text, timestamp: now });
-  });
-
-  return messages;
-}
+function scrapeCurrentConversation() { return KapsulCapture.scrape("gemini"); }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BLOCK E — Shared UI utilities
@@ -375,36 +186,14 @@ function copyCurrentChat() {
   );
 }
 
-function sendFromThisPage(target) {
-  const messages = scrapeCurrentConversation();
-  if (!messages.length && !_attachedKnowledge.length) { showBanner("No conversation found on this page.", true); return; }
-  const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "Untitled";
-  const lines = [
-    `[Context from Gemini conversation: "${title}"]`,
-    `[Scraped: ${new Date().toLocaleString()}]`, "",
-  ];
-
-  if (_attachedKnowledge && _attachedKnowledge.length > 0) {
-    lines.push(`--- Attached Documents ---`);
-    for (const doc of _attachedKnowledge) {
-      lines.push(`Here is the attached document context (${doc.name}):`, ``, doc.content, ``);
-    }
-    lines.push(`--- End of Attached Documents ---`, ``);
-  }
-
-  for (const msg of messages) {
-    lines.push(`${msg.type === "user" ? "User" : "Gemini"}: ${msg.content}`, "");
-  }
-  lines.push("---", "I'm continuing this conversation. What are your thoughts?");
-
-  const AI_URLS = { claude: "https://claude.ai/new", chatgpt: "https://chatgpt.com/", deepseek: "https://chat.deepseek.com/" };
-  const context = lines.join("\n");
-  try {
-    chrome.storage.local.set(
-      { [PENDING_INJECT_KEY]: { target, context, ts: Date.now() } },
-      () => window.open(AI_URLS[target], "_blank")
-    );
-  } catch (e) { window.open(AI_URLS[target], "_blank"); }
+async function sendFromThisPage(target) {
+  const id=Kapsul.convId("gemini",location.href);
+  const saved=await scrapeAndSave();
+  if (!saved?.ok || id!==Kapsul.convId("gemini",location.href)) return showBanner(saved?.reason || saved?.error || "Capture the current chat first.",true);
+  const stored=await Kapsul.sendBg({action:"kapsul:get",id});
+  if (!stored.conv) return showBanner("No saved messages to send.",true);
+  const res=await Kapsul.sendBg({action:"openAIWithContext",target,context:Kapsul.toPlainText(stored.conv)});
+  showBanner(res.ok ? "Opening destination — review context before sending." : res.error || "Could not open destination.",!res.ok);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -757,10 +546,8 @@ async function init() {
     setAttached: (arr) => { _attachedKnowledge = arr || []; },
   });
 
-  // Triple-fire to cover Angular's delayed hydration (0ms, 1.5s, 3s)
+  // The shared handoff waits for the composer to mount.
   tryInjectContext();
-  setTimeout(tryInjectContext, 1500);
-  setTimeout(tryInjectContext, 3000);
 
   retryInjectButton();
 }

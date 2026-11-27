@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Kapsul",
-  "version": "1.3.0",
-  "description": "Automatically save and restore Claude.ai conversation context. Send context to Gemini, ChatGPT, or DeepSeek.",
+  "version": "1.3.1",
+  "description": "Save rendered conversations from Claude, ChatGPT, Gemini and DeepSeek, and transfer context between them.",
   "permissions": [
     "storage",
     "unlimitedStorage",
@@ -12,10 +12,12 @@
   ],
   "host_permissions": [
     "https://claude.ai/*",
-
     "https://gemini.google.com/*",
     "https://chatgpt.com/*",
-    "https://chat.deepseek.com/*"
+    "https://chat.deepseek.com/*",
+    "https://chat.openai.com/*",
+    "https://www.claude.ai/*",
+    "https://www.chatgpt.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -36,7 +38,9 @@
         "*://*.claude.ai/*",
         "https://gemini.google.com/*",
         "https://chatgpt.com/*",
-        "https://chat.deepseek.com/*"
+        "https://chat.deepseek.com/*",
+        "https://chat.openai.com/*",
+        "https://www.chatgpt.com/*"
       ],
       "js": [
         "lib/theme.js"
@@ -49,6 +53,7 @@
       ],
       "js": [
         "lib/kapsul-core.js",
+        "lib/conversation-capture.js",
         "lib/pdf.min.js",
         "lib/pdf-parser.js",
         "content.js"
@@ -61,6 +66,7 @@
       ],
       "js": [
         "lib/kapsul-core.js",
+        "lib/conversation-capture.js",
         "lib/pdf.min.js",
         "lib/pdf-parser.js",
         "injectors/gemini.js"
@@ -69,10 +75,13 @@
     },
     {
       "matches": [
-        "https://chatgpt.com/*"
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://www.chatgpt.com/*"
       ],
       "js": [
         "lib/kapsul-core.js",
+        "lib/conversation-capture.js",
         "lib/pdf.min.js",
         "lib/pdf-parser.js",
         "injectors/chatgpt.js"
@@ -85,6 +94,7 @@
       ],
       "js": [
         "lib/kapsul-core.js",
+        "lib/conversation-capture.js",
         "lib/pdf.min.js",
         "lib/pdf-parser.js",
         "injectors/deepseek.js"

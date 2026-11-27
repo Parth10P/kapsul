@@ -2,12 +2,11 @@
 // Runs on chat.deepseek.com
 // Storage: chrome.storage.LOCAL (session is unreliable in content scripts)
 
-const PENDING_INJECT_KEY = "pending_context_inject";
-const CC_STORAGE_KEY = "claude_conversations";
 
 let _attachedKnowledge = [];
 
 async function handleInterceptedPDF(file) {
+  const originalUrl=Kapsul.normalizeUrl(location.href);
   try {
     showBanner(`Extracting text from ${file.name}…`);
     if (typeof extractMarkdownFromPDF !== 'function') {
@@ -15,6 +14,7 @@ async function handleInterceptedPDF(file) {
       return;
     }
     const markdown = await extractMarkdownFromPDF(file);
+    if (Kapsul.normalizeUrl(location.href)!==originalUrl) return;
     
     const docObj = {
       name: file.name,
@@ -55,29 +55,6 @@ function setupFileInterception() {
 }
 
 // ── Wait for DeepSeek's textarea to mount
-async function waitForDeepSeekInput(maxRetries = 60) {
-  for (let i = 0; i < maxRetries; i++) {
-    const el = findDeepSeekInput();
-    if (el) return el;
-    await new Promise(r => setTimeout(r, 300));
-  }
-  return null;
-}
-
-function findDeepSeekInput() {
-  // Primary: confirmed textarea selector
-  const ta = document.querySelector("textarea#chat-input");
-  if (ta && ta.offsetParent !== null) return ta;
-  // Fallback 1: any visible textarea
-  for (const el of document.querySelectorAll("textarea")) {
-    if (el.offsetParent !== null) return el;
-  }
-  // Fallback 2: contenteditable (future DS changes)
-  const ce = document.querySelector('[contenteditable="true"][data-lexical-editor="true"]');
-  if (ce && ce.offsetParent !== null) return ce;
-  return null;
-}
-
 function injectIntoDeepSeek(el, context) {
   el.focus();
   if (el.tagName === "TEXTAREA") {
@@ -94,86 +71,12 @@ function injectIntoDeepSeek(el, context) {
   }
 }
 
-async function submitDeepSeekInput() {
-  for (let i = 0; i < 20; i++) {
-    const btn = document.querySelector(
-      'button[aria-label*="Send" i]:not([disabled]),' +
-      'button[type="submit"]:not([disabled])'
-    );
-    if (btn) { btn.click(); return true; }
-    await new Promise(r => setTimeout(r, 200));
-  }
-  const inp = findDeepSeekInput();
-  if (inp) {
-    inp.focus();
-    inp.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "Enter", code: "Enter", keyCode: 13,
-      bubbles: true, cancelable: true, composed: true,
-    }));
-    return true;
-  }
-  return false;
-}
-
 async function tryInjectContext() {
-  let pending;
-  try {
-    const result = await chrome.storage.local.get([PENDING_INJECT_KEY]);
-    pending = result[PENDING_INJECT_KEY];
-  } catch (e) { return; }
-
-  if (!pending) return;
-  if (pending.target !== "deepseek") return;
-  if (Date.now() - pending.ts > 60000) {
-    await chrome.storage.local.remove([PENDING_INJECT_KEY]); return;
-  }
-
-  const input = await waitForDeepSeekInput();
-  if (!input) { showBanner("Could not find DeepSeek input field.", true); return; }
-
-  try { await chrome.storage.local.remove([PENDING_INJECT_KEY]); } catch (_) { }
-
-  injectIntoDeepSeek(input, pending.context);
-  await new Promise(r => setTimeout(r, 500));
-  showBanner("Sending context to DeepSeek…");
-  const ok = await submitDeepSeekInput();
-  if (!ok) showBanner("Injected — please press Send manually.", true);
+  return Kapsul.receiveContext("deepseek", () => [...document.querySelectorAll('textarea#chat-input, textarea[placeholder*="DeepSeek" i], textarea[placeholder*="Message" i]')].find(el => el.offsetParent !== null), injectIntoDeepSeek, showBanner);
 }
 
 
-function scrapeCurrentConversation() {
-  let messages = [];
-  const now = new Date().toISOString();
-
-  const allMessages = document.querySelectorAll(
-    ".fbb737a4, .f9bf7997, [class*='user-message'], [class*='assistant-message'], .ds-markdown"
-  );
-
-  if (!allMessages.length) {
-    document.querySelectorAll("article, [role='listitem'], .message").forEach(el => {
-      const text = el.innerText?.trim();
-      if (text) messages.push({ type: "unknown", content: text, timestamp: now });
-    });
-    return messages;
-  }
-
-  // drop nested duplicates (wrapper + inner markdown), but only within the same side
-  const isUserEl = (el) => el.classList.contains("fbb737a4") ||
-    el.closest("[class*='user']") !== null || el.querySelector("textarea") !== null;
-  const matched = [...allMessages];
-  const outer = matched.filter(el => !matched.some(o => o !== el && o.contains(el) && isUserEl(o) === isUserEl(el)));
-
-  outer.forEach(el => {
-    const isUser = el.classList.contains("fbb737a4") ||
-      el.closest("[class*='user']") !== null ||
-      el.querySelector("textarea") !== null;
-    const type = isUser ? "user" : "assistant";
-    const content = el.innerText?.trim();
-    if (content) messages.push({ type, content, format: "text", timestamp: now });
-  });
-
-  return messages;
-}
+function scrapeCurrentConversation() { return KapsulCapture.scrape("deepseek"); }
 
 // BLOCK C — Shared UI helpers
 function showBanner(msg, isError = false) {
@@ -248,44 +151,14 @@ function copyCurrentChat() {
   );
 }
 
-function sendFromThisPage(target) {
-  const messages = scrapeCurrentConversation();
-  if (!messages.length && !_attachedKnowledge.length) { showBanner("No conversation found on this page.", true); return; }
-  const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "Untitled";
-  const lines = [
-    `[Context from DeepSeek conversation: "${title}"]`,
-    `[Scraped: ${new Date().toLocaleString()}]`,
-    "",
-  ];
-  
-  if (_attachedKnowledge && _attachedKnowledge.length > 0) {
-    lines.push(`--- Attached Documents ---`);
-    for (const doc of _attachedKnowledge) {
-      lines.push(`Here is the attached document context (${doc.name}):`, ``, doc.content, ``);
-    }
-    lines.push(`--- End of Attached Documents ---`, ``);
-  }
-
-  for (const msg of messages) {
-    lines.push(`${msg.type === "user" ? "User" : "DeepSeek"}: ${msg.content}`, "");
-  }
-  lines.push("---", "I'm continuing this conversation. What are your thoughts?");
-
-  const context = lines.join("\n");
-  const AI_URLS = {
-    claude: "https://claude.ai/new",
-    gemini: "https://gemini.google.com/app",
-    chatgpt: "https://chatgpt.com/",
-  };
-
-  try {
-    chrome.storage.local.set(
-      { [PENDING_INJECT_KEY]: { target, context, ts: Date.now() } },
-      () => window.open(AI_URLS[target], "_blank")
-    );
-  } catch (e) {
-    window.open(AI_URLS[target], "_blank");
-  }
+async function sendFromThisPage(target) {
+  const id=Kapsul.convId("deepseek",location.href);
+  const saved=await scrapeAndSave();
+  if (!saved?.ok || id!==Kapsul.convId("deepseek",location.href)) return showBanner(saved?.reason || saved?.error || "Capture the current chat first.",true);
+  const stored=await Kapsul.sendBg({action:"kapsul:get",id});
+  if (!stored.conv) return showBanner("No saved messages to send.",true);
+  const res=await Kapsul.sendBg({action:"openAIWithContext",target,context:Kapsul.toPlainText(stored.conv)});
+  showBanner(res.ok ? "Opening destination — review context before sending." : res.error || "Could not open destination.",!res.ok);
 }
 
 // AI options for DeepSeek panel (excludes DeepSeek itself)

@@ -26,15 +26,8 @@ function init() {
   EL.count = document.getElementById("conv-count");
   bindUI();
 
-  // Ask the open AI tab to save right now, then render what is really stored.
-  chrome.runtime.sendMessage({ action: "scrapeActiveTab" }, (res) => {
-    if (chrome.runtime.lastError) { /* not a supported page */ }
-    const err = res && res.ok === false && res.error || "";
-    if (/Receiving end|Could not establish/i.test(err)) {
-      showToast("Refresh this tab once (F5) so Kapsul can start saving", 4000);
-    }
-    refresh();
-  });
+  refresh(); // don't block rendering existing conversations on a slow or broken tab
+  captureCurrent();
 
   // Live update while popup is open (e.g. chat keeps streaming in the tab)
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -42,7 +35,19 @@ function init() {
   });
 }
 
+async function captureCurrent() {
+  const status=document.getElementById("capture-status"), btn=document.getElementById("capture-btn");
+  btn.disabled=true; status.textContent="Capturing…";
+  try {
+    const res=await Kapsul.sendBg({action:"scrapeActiveTab"});
+    const error=res.error || res.reason || "Capture failed. Try reloading the AI tab.";
+    status.textContent=res.ok ? `Captured ${res.messages ?? "current"} messages` :
+      /Receiving end|Could not establish/i.test(error) ? "Reload the AI tab to enable capture." : error;
+  } finally {btn.disabled=false;refresh();}
+}
+
 function bindUI() {
+  document.getElementById("capture-btn").addEventListener("click",captureCurrent);
   document.getElementById("export-btn").addEventListener("click", () => exportAll("json"));
   document.getElementById("export-md-btn").addEventListener("click", () => exportAll("md"));
   document.getElementById("clear-all-btn").addEventListener("click", clearAllHandler);
@@ -227,6 +232,26 @@ function createCard(conv, q) {
   header.appendChild(meta);
   header.appendChild(actions);
   card.appendChild(header);
+
+  /* Transfer any saved conversation, including history from an inactive tab. */
+  const handoff=document.createElement("div");
+  handoff.className="handoff-row";
+  const target=document.createElement("select");
+  target.setAttribute("aria-label","Destination AI");
+  for (const [id,meta] of Object.entries(AI_META)) {
+    if (id===src) continue;
+    const option=document.createElement("option");option.value=id;option.textContent=meta.label;target.appendChild(option);
+  }
+  const send=document.createElement("button");send.className="btn btn-ghost";send.textContent="Use as context";
+  send.addEventListener("click",async()=>{
+    send.disabled=true;
+    const context=Kapsul.toPlainText(conv);
+    const res=await Kapsul.sendBg({action:"openAIWithContext",target:target.value,context});
+    if (!res.ok) showToast(res.error || "Could not open destination");
+    else showToast("Opened destination — review and press Send");
+    send.disabled=false;
+  });
+  handoff.append(target,send);card.appendChild(handoff);
 
   /* ── search snippet ── */
   if (q) {

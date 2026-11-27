@@ -11,92 +11,7 @@ let _attachedKnowledge = [];
 // Reads BOTH sides: what you sent + what Claude answered, in page order.
 // Claude changes its DOM often, so assistant replies are found in 3 steps:
 //   1) known reply selectors  2) turn-by-turn structural fallback
-const USER_SEL = '[data-testid="user-message"]';
-const AI_SEL = [
-  ".font-claude-response",
-  ".font-claude-message",
-  '[data-testid="assistant-message"]',
-  "[data-is-streaming]",
-].join(", ");
-
-function _cleanTurnText(turn) {
-  // everything in a turn that is not the user's own bubble or UI chrome
-  const clone = turn.cloneNode(true);
-  clone.querySelectorAll(
-    USER_SEL + ', button, form, fieldset, header, nav, [contenteditable], [role="toolbar"], [data-testid*="action"], [data-testid*="feedback"]'
-  ).forEach((n) => n.remove());
-  return Kapsul.elementToText(clone);
-}
-
-function _structuralScrape(users) {
-  // climb until we reach the element whose children are the conversation "turns"
-  let list = users[0].parentElement;
-  for (let i = 0; i < 8 && list && list.parentElement; i++) {
-    const hasReply = [...list.children].some(
-      (k) => !k.matches(USER_SEL) && !k.querySelector(USER_SEL) && _cleanTurnText(k).length > 0);
-    if (hasReply && users.every((u) => list.contains(u))) break;
-    list = list.parentElement;
-  }
-  if (!list || list.matches("body, html") || list.querySelector('[contenteditable], fieldset')) {
-    // too broad (reached composer/layout): use user bubbles + their following siblings only
-    const out = [];
-    for (const u of users) {
-      out.push({ el: u, type: "user" });
-      let n = u.closest("[data-test-render-count]") || u;
-      while (n.parentElement && !n.nextElementSibling && n.parentElement !== document.body) n = n.parentElement;
-      const sib = n.nextElementSibling;
-      if (sib && !sib.querySelector(USER_SEL) && !sib.querySelector("[contenteditable]")) out.push({ el: sib, type: "assistant" });
-    }
-    return out;
-  }
-  const out = [];
-  for (const kid of list.children) {
-    if (kid.querySelector(USER_SEL) || kid.matches(USER_SEL)) {
-      out.push({ el: kid.querySelector(USER_SEL) || kid, type: "user" });
-      out.push({ el: kid, type: "assistant", stripUser: true });
-    } else if (kid.textContent.trim()) {
-      out.push({ el: kid, type: "assistant" });
-    }
-  }
-  return out;
-}
-
-function scrapeMessages() {
-  const messages = [];
-  const now = new Date().toISOString();
-  const push = (type, content) => {
-    if (content) messages.push({ type, content, format: "text", timestamp: now });
-  };
-
-  const users = [...document.querySelectorAll(USER_SEL)];
-  const aiRaw = [...document.querySelectorAll(AI_SEL)]
-    .filter((el) => !el.querySelector(USER_SEL) && !el.matches(USER_SEL));
-  const ai = aiRaw.filter((el) => !aiRaw.some((o) => o !== el && o.contains(el))); // outermost only
-
-  let strategy = "selectors";
-  if (ai.length) {
-    const all = [...users.map((el) => ({ el, type: "user" })), ...ai.map((el) => ({ el, type: "assistant" }))]
-      .sort((x, y) => (x.el.compareDocumentPosition(y.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
-    for (const { el, type } of all) {
-      push(type, type === "user" ? el.innerText?.trim() : Kapsul.elementToText(el));
-    }
-  } else if (users.length) {
-    strategy = "structural";
-    for (const item of _structuralScrape(users)) {
-      if (item.type === "user") push("user", item.el.innerText?.trim());
-      else push("assistant", item.stripUser ? _cleanTurnText(item.el) : Kapsul.elementToText(item.el));
-    }
-  }
-
-  // visible in DevTools console (F12) on claude.ai to see what was captured
-  const nu = messages.filter((m) => m.type === "user").length;
-  const sig = `${strategy}:${nu}:${messages.length - nu}`;
-  if (window.__kapsulLastScrape !== sig) {
-    window.__kapsulLastScrape = sig;
-    console.log(`[Kapsul] captured ${nu} user + ${messages.length - nu} Claude messages (${strategy})`);
-  }
-  return messages;
-}
+function scrapeMessages() { return KapsulCapture.scrape("claude"); }
 
 // Live snapshot of the chat that is on screen right now (never from storage)
 function buildLiveEntry() {
@@ -118,6 +33,7 @@ function scheduleConversationSave(delay) { _autoSave?.schedule(delay); }
 
 // ── File Interception ─────────────────────────────────────────────────────────
 async function handleInterceptedPDF(file) {
+  const originalUrl=Kapsul.normalizeUrl(location.href);
   try {
     showToast(`Extracting text from ${file.name}…`);
     if (typeof extractMarkdownFromPDF !== 'function') {
@@ -125,6 +41,7 @@ async function handleInterceptedPDF(file) {
       return;
     }
     const markdown = await extractMarkdownFromPDF(file);
+    if (Kapsul.normalizeUrl(location.href)!==originalUrl) return;
     
     const docObj = {
       name: file.name,
@@ -165,46 +82,6 @@ function setupFileInterception() {
 }
 
 
-// ── Format context ────────────────────────────────────────────────────────────
-function formatContextBlock(conversation) {
-  if (!conversation?.messages?.length && (!conversation?.attached_knowledge || !conversation.attached_knowledge.length)) return null;
-  const lines = [
-    `[CONTEXT HANDOFF — Do NOT reply to this message]`,
-    ``,
-    `The following is the full context of a conversation I was having on Claude.`,
-    `Please read and remember this context. Do not respond to it.`,
-    `I will send my next message separately to continue the conversation.`,
-    ``,
-  ];
-
-  if (conversation.attached_knowledge && conversation.attached_knowledge.length > 0) {
-    lines.push(`--- Attached Documents ---`);
-    for (const doc of conversation.attached_knowledge) {
-      lines.push(`Here is the attached document context (${doc.name}):`, ``, doc.content, ``);
-    }
-    lines.push(`--- End of Attached Documents ---`, ``);
-  }
-
-  lines.push(
-    `--- Conversation: "${conversation.title || "Untitled"}" ---`,
-    `Saved: ${new Date(conversation.savedAt).toLocaleString()}`,
-    ``
-  );
-
-  for (const msg of conversation.messages || []) {
-    lines.push(`${msg.type === "user" ? "User" : "Claude"}: ${msg.content}`, "");
-  }
-
-  lines.push(
-    `--- End of context ---`,
-    ``,
-    `(Please acknowledge you have read the above context by saying "Got it — context received." ` +
-    `Then wait for my next message.)`
-  );
-  return lines.join("\n");
-}
-
-
 // ── Copy current chat to clipboard ──────────────────────────────────────────
 function copyCurrentChat() {
   const conv = buildLiveEntry();
@@ -228,14 +105,13 @@ function downloadCurrentChat(format = "json") {
 // ── Send to AI ────────────────────────────────────────────────────────────────
 // Uses the chat that is open RIGHT NOW (not "the last saved one").
 async function sendToAI(target) {
-  const conversation = buildLiveEntry();
-  const ctx = formatContextBlock(conversation);
-  if (!ctx) { showToast("No messages to send."); return; }
-
-  chrome.runtime.sendMessage({ action: "openAIWithContext", target, context: ctx }, (res) => {
-    const names = { claude: "Claude", gemini: "Gemini", chatgpt: "ChatGPT", deepseek: "DeepSeek" };
-    showToast(res?.ok ? `↗ Opening ${names[target]}…` : "Failed to open tab.");
-  });
+  const id=Kapsul.convId("claude",location.href);
+  const saved=await _autoSave?.flush();
+  if (!saved?.ok || id!==Kapsul.convId("claude",location.href)) return showToast(saved?.reason || saved?.error || "Capture the current chat first.");
+  const stored=await Kapsul.sendBg({action:"kapsul:get",id});
+  if (!stored.conv) return showToast("No saved messages to send.");
+  const res=await Kapsul.sendBg({action:"openAIWithContext",target,context:Kapsul.toPlainText(stored.conv)});
+  showToast(res.ok ? "Opening destination — review context before sending." : res.error || "Could not open destination.");
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -614,38 +490,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 // ── Pending context injection (receive context from other AIs) ────────────────
 function checkAndInjectPendingContext() {
-  try {
-    chrome.storage.local.get(["pending_context_inject"], (result) => {
-      const pending = result["pending_context_inject"];
-      if (!pending) return;
-      if (pending.target !== "claude" || Date.now() - pending.ts > 60000) return;
-      chrome.storage.local.remove(["pending_context_inject"]);
-
-      const context = pending.context;
-      let attempts = 0;
-      const maxAttempts = 20;
-
-      const poll = setInterval(() => {
-        attempts++;
-        const el = document.querySelector('div[data-testid="chat-input"][contenteditable="true"]');
-        if (el) {
-          clearInterval(poll);
-          el.focus();
-          document.execCommand("selectAll", false, null);
-          document.execCommand("delete", false, null);
-          document.execCommand("insertText", false, context);
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-          // Show success banner
-          showToast("✓ Context injected — review and send!");
-        } else if (attempts >= maxAttempts) {
-          clearInterval(poll);
-          showToast("⚠️ Could not find Claude input field.");
-        }
-      }, 500);
-    });
-  } catch (e) {
-    // silently fail
-  }
+  return Kapsul.receiveContext("claude", () => [...document.querySelectorAll('[data-testid="chat-input"][contenteditable="true"], .tiptap.ProseMirror[contenteditable="true"], fieldset [contenteditable="true"]')].find(el => el.offsetParent !== null), (el, context) => {
+    el.focus();
+    document.execCommand("insertText", false, context);
+    el.dispatchEvent(new Event("input", {bubbles:true}));
+  }, showToast);
 }
 
 // ── Keep the Export button alive (React re-renders drop it) ───────────────────

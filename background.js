@@ -4,7 +4,7 @@ importScripts("lib/kapsul-core.js");
 
 const STORAGE_KEY = Kapsul.STORAGE_KEY;
 const TOMB_KEY = Kapsul.TOMB_KEY;
-const PENDING_INJECT_KEY = "pending_context_inject";
+const pendingKey = tabId => `kapsul_pending_${tabId}`;
 
 // ── AI target URLs ──────────────────────────────────────────────
 const AI_URLS = {
@@ -26,7 +26,16 @@ function enqueue(fn) {
 
 async function readAll() {
   const res = await chrome.storage.local.get([STORAGE_KEY, TOMB_KEY]);
-  return { all: res[STORAGE_KEY] || [], tombs: res[TOMB_KEY] || {} };
+  const tombs = res[TOMB_KEY] || {};
+  for (const [id,count] of Object.entries(tombs)) {
+    const sep=id.indexOf("_https://");
+    if (sep<0) continue;
+    const url=id.slice(sep+1), source=Kapsul.sourceFromUrl(url);
+    if (!source) continue;
+    const canonical=Kapsul.convId(source,url);
+    if (canonical!==id) { tombs[canonical]=Math.max(tombs[canonical] || 0,count); delete tombs[id]; }
+  }
+  return { all: res[STORAGE_KEY] || [], tombs };
 }
 
 function sameChat(c, incoming) {
@@ -41,6 +50,8 @@ function stableId(c) {
 
 function upsertConversation(incoming) {
   return enqueue(async () => {
+    if (!incoming || Kapsul.sourceFromUrl(incoming.url)!==incoming.source || !Kapsul.isConvUrl(incoming.url) || !Array.isArray(incoming.messages)) return {ok:false,error:"Invalid chat snapshot"};
+    incoming.id=stableId(incoming);
     const { all, tombs } = await readAll();
 
     // user deleted this chat: only come back when the chat really grew
@@ -126,42 +137,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // ── Scrape active tab (any supported AI site) ─────────────────
     case "scrapeActiveTab": {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const tab = tabs[0];
-        if (!tab?.url) { sendResponse({ ok: false, error: "No active tab" }); return; }
-
-        const supported = ["claude.ai", "gemini.google.com", "chatgpt.com", "chat.deepseek.com"];
-        const isSupported = supported.some(h => tab.url.includes(h));
-        if (!isSupported) { sendResponse({ ok: false, error: "Unsupported site" }); return; }
-
-        chrome.tabs.sendMessage(tab.id, { action: "scrapeNow" }, (response) => {
-          if (chrome.runtime.lastError) {
-            sendResponse({ ok: false, error: chrome.runtime.lastError.message });
-            return;
-          }
-          sendResponse({ ok: true, response });
-        });
-      });
+      (async () => {
+        const [tab] = await chrome.tabs.query({active:true,currentWindow:true});
+        if (!tab?.id || !Kapsul.sourceFromUrl(tab.url)) return {ok:false,reason:"Open Claude, ChatGPT, Gemini or DeepSeek to capture a chat."};
+        if (!Kapsul.isConvUrl(tab.url)) return {ok:false,reason:"Open an existing chat or send a first message."};
+        const result=await chrome.tabs.sendMessage(tab.id,{action:"scrapeNow"},{frameId:0});
+        return result || {ok:false,reason:"Capture is not ready. Reload the AI tab."};
+      })().then(sendResponse,e=>sendResponse({ok:false,error:String(e.message || e)}));
       return true;
     }
 
-    // ── Open target AI with context injected ─────────────────────
+    // A handoff is created by an explicit action and scoped to the newly opened tab.
+    // Use session storage so conversation text is not left in a persistent shared slot.
     case "openAIWithContext": {
-      const { target, context } = message;
-
-      if (!AI_URLS[target]) {
-        sendResponse({ ok: false, error: "Unknown AI target" });
-        return true;
-      }
-
-      // Store the pending context so the injector content script can pick it up
-      // Using chrome.storage.local (not .session) for reliable cross-context access in MV3
-      chrome.storage.local.set({ [PENDING_INJECT_KEY]: { target, context, ts: Date.now() } }, () => {
-        chrome.tabs.create({ url: AI_URLS[target] }, (tab) => {
-          sendResponse({ ok: true, tabId: tab.id });
-        });
-      });
-
+      (async () => {
+        const {target,context}=message;
+        if (!Object.hasOwn(AI_URLS,target) || typeof context!=="string" || !context.trim()) return {ok:false,error:"Invalid AI target or empty context."};
+        const tab=await chrome.tabs.create({url:"about:blank"});
+        try {
+          await chrome.storage.session.set({[pendingKey(tab.id)]:{target,context,token:crypto.randomUUID(),ts:Date.now()}});
+          await chrome.tabs.update(tab.id,{url:AI_URLS[target]});
+          return {ok:true,tabId:tab.id};
+        } catch(e) {
+          await chrome.storage.session.remove(pendingKey(tab.id));
+          await chrome.tabs.remove(tab.id).catch(()=>{});
+          throw e;
+        }
+      })().then(sendResponse,e=>sendResponse({ok:false,error:String(e.message || e)}));
+      return true;
+    }
+    case "kapsul:pending":
+    case "kapsul:pendingDone": {
+      (async () => {
+        if (!sender.tab?.id || sender.frameId!==0 || Kapsul.sourceFromUrl(sender.url)!==message.source || Kapsul.isConvUrl(sender.url)) return {ok:false};
+        const key=pendingKey(sender.tab.id), pending=(await chrome.storage.session.get(key))[key];
+        if (!pending || pending.target!==message.source) return {ok:true,pending:null};
+        if (Date.now()-pending.ts>5*60*1000) {await chrome.storage.session.remove(key);return {ok:true,pending:null};}
+        if (message.action==="kapsul:pendingDone") {
+          if (pending.token!==message.token) return {ok:false};
+          await chrome.storage.session.remove(key);return {ok:true};
+        }
+        return {ok:true,pending};
+      })().then(sendResponse,e=>sendResponse({ok:false,error:String(e.message || e)}));
       return true;
     }
 
@@ -183,3 +200,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
   }
 });
+
+chrome.tabs.onRemoved.addListener(tabId => {chrome.storage.session.remove(pendingKey(tabId)).catch(()=>{});});
+// Retire the old unscoped handoff slot on upgrade (saved conversations are unchanged).
+chrome.runtime.onInstalled.addListener(() => {chrome.storage.local.remove("pending_context_inject").catch(()=>{});});

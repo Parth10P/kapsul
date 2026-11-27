@@ -708,3 +708,12 @@ body {
   border-color: rgba(224, 82, 82, 0.6);
   color: #ff8a8a;
 }
+
+/* Capture diagnostics and handoff actions */
+.capture-bar, .handoff-row {display:flex; align-items:center; gap:8px; justify-content:space-between;}
+.capture-bar {padding:8px 12px; border-bottom:1px solid var(--border, #7773);}
+#capture-status {font-size:11px; line-height:1.4; overflow-wrap:anywhere; flex:1;}
+#capture-btn {flex-shrink:0; font-size:11px;}
+.handoff-row {padding:4px 0 6px; justify-content:flex-start;}
+.handoff-row select {font:inherit; font-size:12px; padding:5px; color:inherit; background:transparent; border:1px solid var(--border, #7775); border-radius:5px; color-scheme:light dark;}
+.handoff-row .btn {font-size:11px;}
