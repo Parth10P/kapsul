@@ -84,7 +84,7 @@ function upsertConversation(incoming) {
     deduped.sort((a, b) => new Date(a.savedAt) - new Date(b.savedAt));
     const trimmed = deduped.slice(-Kapsul.MAX_CONVERSATIONS);
     await chrome.storage.local.set({ [STORAGE_KEY]: trimmed, [TOMB_KEY]: tombs });
-    return { ok: true, count: trimmed.length };
+    return { ok: true, count: trimmed.length, messages: trimmed.find(c=>c.id===incoming.id)?.messages?.length || incoming.messages.length };
   });
 }
 

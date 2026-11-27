@@ -41,7 +41,7 @@ async function captureCurrent() {
   try {
     const res=await Kapsul.sendBg({action:"scrapeActiveTab"});
     const error=res.error || res.reason || "Capture failed. Try reloading the AI tab.";
-    status.textContent=res.ok ? `Captured ${res.messages ?? "current"} messages` :
+    status.textContent=res.ok ? `Saved ${res.messages ?? "current"} messages${res.historyStatus==="partial" ? " · more history may be available" : ""}` :
       /Receiving end|Could not establish/i.test(error) ? "Reload the AI tab to enable capture." : error;
   } finally {btn.disabled=false;refresh();}
 }
@@ -77,6 +77,10 @@ function refresh() {
       const url = tabs && tabs[0] && tabs[0].url;
       const src = url && Kapsul.sourceFromUrl(url);
       _activeKey = src && Kapsul.isConvUrl(url) ? src + "|" + Kapsul.normalizeUrl(url) : null;
+      const current=_all.find(c=>keyOf(c)===_activeKey);
+      if(current&&!document.getElementById("capture-btn").disabled) {
+        document.getElementById("capture-status").textContent=`Saved ${current.messages?.length||0} messages${current.historyStatus==="partial"?" · more history may be available":current.historyStatus==="pending"?" · checking history":""}`;
+      }
       render();
     });
   });
